@@ -130,6 +130,24 @@ curl -s -X POST "$RADARR_URL/api/v3/rootfolder" \
   echo "✓ Radarr Movies root folder configured" || echo "✓ Radarr root folder (already exists or configured)"
 echo
 
+# Step 7: Configure authentication (optional, can be skipped with --no-auth)
+if [ "$1" != "--no-auth" ]; then
+  echo "Configuring authentication..."
+  bash "$(dirname "$0")/configure-auth.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" "testuser" "testpass123" 2>/dev/null || \
+    echo "ℹ️  Auth configuration skipped (optional)"
+  echo
+fi
+
+# Step 8: Import test fixtures (optional, can be skipped with --no-fixtures)
+if [ "$1" != "--no-fixtures" ]; then
+  if [ -d "$(dirname "$0")/fixtures" ]; then
+    echo "Importing test fixtures..."
+    bash "$(dirname "$0")/import-fixtures.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" 2>/dev/null || \
+      echo "ℹ️  Fixtures import skipped (no fixture files found)"
+    echo
+  fi
+fi
+
 # Step 7: Summary
 echo "=== Test Stack Ready ==="
 echo

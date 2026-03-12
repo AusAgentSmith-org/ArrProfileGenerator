@@ -20,20 +20,62 @@ profsync
 
 ### Testing with Local Sonarr/Radarr Stack
 
-For testing or development, use the included Docker test stack:
+For testing or development, use the included Docker test stack with pre-populated libraries:
+
+#### Setup
 
 ```bash
-# Initialize test environment (Sonarr + Radarr)
+# Initialize test environment (Sonarr + Radarr with 531 series + 1209 movies)
 cd test
 ./init-stack.sh
+```
 
-# Run wizard with auto-loaded credentials from teststack
+This will:
+1. ✅ Start Sonarr (port 8989) and Radarr (port 7878) containers
+2. ✅ Create root folders and quality profiles
+3. ✅ Configure authentication: **testuser** / **testpass123**
+4. ✅ Import pre-populated libraries (531 TV series, 1209 movies)
+5. ✅ Set local network bypass (no auth needed for 127.0.0.1)
+
+#### Access
+
+```bash
+# Sonarr: http://localhost:8989
+# Radarr: http://localhost:7878
+# Username: testuser
+# Password: testpass123
+```
+
+#### Run Wizard
+
+```bash
 cd ..
 python wizard.py --teststack
+```
 
-# Cleanup when done
+This runs the wizard with:
+- Auto-loaded credentials from `test/.env`
+- No manual URL/API key entry needed
+- Immediate configuration of your 531 series and 1209 movies
+
+#### Cleanup
+
+```bash
 cd test
 ./cleanup-stack.sh
+```
+
+#### Options
+
+```bash
+# Skip authentication setup
+./init-stack.sh --no-auth
+
+# Skip library import (faster startup)
+./init-stack.sh --no-fixtures
+
+# Both
+./init-stack.sh --no-auth --no-fixtures
 ```
 
 See [`test/README.md`](test/README.md) for detailed test stack documentation.
@@ -87,7 +129,13 @@ wizard.py           # Entry point
 
 ## Requirements
 
+### Wizard
 - Python 3.10+
 - questionary >= 2.0
 - requests >= 2.31
-- Sonarr v4+ (or Radarr) with API access
+- Sonarr v4+ or Radarr v6+ with API access
+
+### Test Stack (Optional)
+- Docker and Docker Compose
+- ~500MB disk space (for containers and pre-populated libraries)
+- Ports 8989 (Sonarr) and 7878 (Radarr) available
