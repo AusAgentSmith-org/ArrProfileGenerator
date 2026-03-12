@@ -206,3 +206,24 @@ class GroupProfile(Base):
         UniqueConstraint("group_name", "resolution", "media_type", name="uq_group_profile"),
         Index("ix_group_profiles_tier", "computed_tier"),
     )
+
+
+class TrashGroupTier(Base):
+    """TRaSH Guides tier assignment for a release group (read-only benchmark)."""
+
+    __tablename__ = "trash_group_tiers"
+
+    id = Column(Integer, primary_key=True)
+    group_name = Column(String(100), nullable=False, index=True)
+    trash_tier_name = Column(String(100), nullable=False)   # "HD Bluray Tier 01"
+    trash_tier_category = Column(String(50), nullable=False)  # "hd-bluray", "web", "lq"
+    trash_tier_number = Column(Integer, nullable=False)      # 1, 2, 3 (0 for LQ)
+    app_type = Column(String(10), nullable=False)            # "radarr", "sonarr", "both"
+    trash_score = Column(Integer, nullable=True)             # default score from trash_scores
+    imported_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source_commit = Column(String(40), nullable=True)        # git SHA if available
+
+    __table_args__ = (
+        UniqueConstraint("group_name", "trash_tier_name", "app_type",
+                         name="uq_trash_group_tier"),
+    )

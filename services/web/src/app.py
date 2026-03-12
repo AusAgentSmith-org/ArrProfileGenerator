@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, desc, case
 
 from profsync.db import get_session
-from profsync.models import GroupProfile, Nuke, ParsedRelease, Release, ReleaseQuality
+from profsync.models import GroupProfile, Nuke, ParsedRelease, Release, ReleaseQuality, TrashGroupTier
 from profsync.queue import get_redis, queue_length, QUEUE_RAW_RELEASES, QUEUE_NFO_NEEDED
 
 app = FastAPI(title="ProfSync Dashboard")
@@ -62,9 +62,20 @@ def groups_page(request: Request):
             .order_by(desc(GroupProfile.release_count))
             .all()
         )
+        # Build TRaSH tier lookup for all groups in results
+        group_names = [p.group_name for p in profiles]
+        trash_rows = (
+            session.query(TrashGroupTier)
+            .filter(TrashGroupTier.group_name.in_(group_names))
+            .all()
+        ) if group_names else []
+        trash_lookup = {}
+        for t in trash_rows:
+            trash_lookup.setdefault(t.group_name, []).append(t)
     return templates.TemplateResponse("groups.html", {
         "request": request,
         "profiles": profiles,
+        "trash_lookup": trash_lookup,
     })
 
 

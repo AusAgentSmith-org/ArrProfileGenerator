@@ -123,5 +123,22 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  trash-importer:
+    build:
+      context: .
+      dockerfile: services/trash-importer/Dockerfile
+    env_file: .env
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    profiles: ["tools"]
+
 volumes:
   pgdata:

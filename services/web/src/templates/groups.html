@@ -15,6 +15,7 @@
                     <th>Type</th>
                     <th>Releases</th>
                     <th>Tier</th>
+                    <th>TRaSH Tier</th>
                     <th>Confidence</th>
                     <th>Nuke Rate</th>
                     <th>Avg CRF</th>
@@ -34,6 +35,20 @@
                     <td>
                         {% set tier = (p.computed_tier or 'unranked')|replace('+', '-plus') %}
                         <span class="badge tier-{{ tier|lower }}">{{ p.computed_tier or '—' }}</span>
+                    </td>
+                    <td>
+                        {% set trash_tiers = trash_lookup.get(p.group_name, []) %}
+                        {% if trash_tiers %}
+                            {% set best = trash_tiers|sort(attribute='trash_tier_number')|first %}
+                            {% if best.trash_tier_category == 'lq' %}
+                                <span class="badge tier-f" title="TRaSH: Low Quality">LQ</span>
+                            {% else %}
+                                <span class="badge tier-trash-{{ best.trash_tier_number }}" title="{{ best.trash_tier_name }}">T{{ best.trash_tier_number }}</span>
+                                <span style="font-size: 10px; color: #8b949e;">{{ best.trash_tier_category }}</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
                     </td>
                     <td>{{ "%.0f"|format(p.tier_confidence * 100) if p.tier_confidence else '—' }}%</td>
                     <td>{{ "%.1f"|format(p.nuke_rate * 100) if p.nuke_rate is not none else '—' }}%</td>
