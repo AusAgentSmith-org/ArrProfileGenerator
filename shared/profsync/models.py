@@ -145,6 +145,9 @@ class ReleaseQuality(Base):
     runtime_minutes = Column(Integer, nullable=True)
     bitrate_per_minute = Column(Float, nullable=True)
 
+    # Video profile (HDR/SDR from NFO)
+    video_profile_detail = Column(String(50), nullable=True)  # "HDR10", "DV", "SDR"
+
     # Linked media
     imdb_id = Column(String(20), nullable=True, index=True)
     tvdb_id = Column(String(20), nullable=True)
@@ -196,6 +199,14 @@ class GroupProfile(Base):
     computed_tier = Column(String(5), nullable=True, index=True)
     tier_confidence = Column(Float, default=0.0)  # 0.0-1.0
     tier_factors = Column(JSONB, default=dict)  # explanation of tier calculation
+
+    # New aggregate columns
+    codec_distribution = Column(JSONB, default=dict)          # {"x265": 0.72, "x264": 0.28}
+    video_profile_distribution = Column(JSONB, default=dict)  # {"HDR10": 0.4, "SDR": 0.6}
+    avg_audio_bitrate_kbps = Column(Float, nullable=True)
+    avg_bit_depth = Column(Float, nullable=True)
+    trash_tier_name = Column(String(100), nullable=True)       # denormalized for display
+    trash_score = Column(Integer, nullable=True)               # denormalized
 
     # Quality trend (JSON array: [{"period": "2025-H2", "tier": "A+"}, ...])
     quality_trend = Column(JSONB, default=list)

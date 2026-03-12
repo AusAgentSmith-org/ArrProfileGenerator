@@ -36,15 +36,15 @@ api.predb.net → collector → Redis queue → parser → Postgres
 |---------|---------|-----------|
 | **collector** | Polls api.predb.net REST API every 30s for new releases + backfills historical data by section | `services/collector/src/websocket_client.py` (poller), `backfill.py` |
 | **parser** | Consumes raw releases from Redis, parses with guessit, filters to English movies/TV, writes to Postgres | `services/parser/src/processor.py`, `filters.py` |
-| **nfo-fetcher** | Fetches NFO files from xREL API, parses quality metrics (CRF, bitrate, audio) via regex | `services/nfo-fetcher/src/fetcher.py`, `nfo_parser.py` |
-| **analyzer** | Periodic (hourly) aggregation — computes per-group quality profiles and auto-assigns tiers | `services/analyzer/src/profiler.py` |
+| **nfo-fetcher** | Fetches NFO files from xREL API, parses quality metrics (CRF, bitrate, audio, HDR profile) via regex | `services/nfo-fetcher/src/fetcher.py`, `nfo_parser.py` |
+| **analyzer** | Periodic (hourly) aggregation — computes per-group quality profiles using TRaSH-blended scoring and auto-assigns tiers | `services/analyzer/src/profiler.py` |
 | **migrate** | One-shot: creates all DB tables from SQLAlchemy models, exits | `services/migrate/migrate.py` |
 
 ### Shared Package
 
 `shared/profsync/` is installed into every service container:
 - `config.py` — Pydantic settings from env vars
-- `models.py` — SQLAlchemy models (releases, parsed_releases, nukes, release_quality, group_profiles)
+- `models.py` — SQLAlchemy models (releases, parsed_releases, nukes, release_quality, group_profiles, trash_group_tiers)
 - `db.py` — Session factory
 - `queue.py` — Redis queue helpers (QUEUE_RAW_RELEASES, QUEUE_NFO_NEEDED)
 - `logging.py` — Structured logging setup
@@ -53,9 +53,10 @@ api.predb.net → collector → Redis queue → parser → Postgres
 
 - **releases** — Raw release data from PreDB (name, team, category, pre timestamp)
 - **nukes** — Nuke/unnuke status per release
-- **parsed_releases** — Parsed metadata from release names (title, resolution, codec, group, audio, source)
-- **release_quality** — Quality metrics extracted from NFO files (CRF, bitrate, audio format, encode ratio)
-- **group_profiles** — Aggregated per-group stats by resolution and media type, with computed quality tiers
+- **parsed_releases** — Parsed metadata from release names (title, resolution, codec, group, audio, source, video_profile)
+- **release_quality** — Quality metrics extracted from NFO files (CRF, bitrate, audio format, encode ratio, video_profile_detail)
+- **group_profiles** — Aggregated per-group stats by resolution and media type, with computed quality tiers. Includes codec_distribution, video_profile_distribution, denormalized trash_tier_name/trash_score
+- **trash_group_tiers** — TRaSH Guides tier assignments (read-only benchmark data imported from TRaSH JSON)
 
 ## Data Source
 
@@ -83,7 +84,8 @@ All services use `dns: [127.0.0.11, 1.1.1.1, 1.0.0.1]` for reliable resolution i
 - **Database is the product** — we don't output TRaSH-compatible JSON. The rich data model (per-release quality metrics, per-group profiles by resolution) would lose too much fidelity compressed into TRaSH's regex-match-and-static-score format.
 - **Services are decoupled via Redis queues** — each service manages its own rate limits and can restart independently.
 - **NFO parsing is best-effort** — `parse_confidence` (0.0-1.0) tracks how many fields were extracted. Groups with low NFO coverage get lower tier confidence.
-- **Quality tiers are composite scores** — weighted combination of nuke rate, CRF values, audio format distribution, consistency, and data volume. Tiers: A+, A, B+, B, C+, C, D, F.
+- **TRaSH-blended scoring** — `score = quality_score (0-60) + reliability_score (0-40)`. Quality score uses TRaSH score as primary authority when available (capped at 60), falls back to CRF (capped at 30) or bitrate (capped at 20) for unverified groups. Reliability score combines nuke rate (dominant), lossless audio fraction, volume, proper/repack rate, and NFO coverage. TRaSH LQ tag forces F tier. Tiers: A+, A, B+, B, C+, C, D, F.
+- **Schema migrations require manual ALTER TABLE** — `create_all()` only creates new tables, it won't add columns to existing ones. New nullable columns must be added via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
 
 ## Git
 

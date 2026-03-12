@@ -16,7 +16,7 @@ def parse_nfo(nfo_text: str) -> dict:
     """
     result = {}
     fields_found = 0
-    total_fields = 12  # number of fields we try to extract
+    total_fields = 13  # number of fields we try to extract
 
     # --- Video bitrate ---
     video_br = _extract_video_bitrate(nfo_text)
@@ -103,6 +103,12 @@ def parse_nfo(nfo_text: str) -> dict:
     if tvdb:
         result["tvdb_id"] = tvdb
 
+    # --- Video profile (HDR/SDR) ---
+    video_profile = _extract_video_profile(nfo_text)
+    if video_profile:
+        result["video_profile_detail"] = video_profile
+        fields_found += 1
+
     result["parse_confidence"] = round(fields_found / total_fields, 2)
     result["fetched_at"] = datetime.now(timezone.utc)
 
@@ -113,15 +119,20 @@ def parse_nfo(nfo_text: str) -> dict:
 
 def _extract_video_bitrate(text: str) -> int | None:
     """Extract video bitrate in kbps."""
-    patterns = [
-        # "Video Bitrate: 12 345 kbps" or "Video Bitrate : 12345 Kbps"
+    # Patterns explicitly tagged as video — no audio guard needed
+    specific_patterns = [
         r"video\s*(?:bit\s*rate|bitrate)\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
-        # "Bitrate : 4 203 kb/s" (predb.net ETHEL-style NFO)
+    ]
+    result = _match_bitrate(text, specific_patterns)
+    if result is not None:
+        return result
+
+    # Generic bitrate patterns — skip lines that mention "audio"
+    generic_patterns = [
         r"bitrate\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
-        # "Bit rate : 12 345 kb/s" (MediaInfo style)
         r"bit\s*rate\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
     ]
-    return _match_bitrate(text, patterns)
+    return _match_bitrate(text, generic_patterns, skip_audio_lines=True)
 
 
 def _extract_source_bitrate(text: str) -> int | None:
@@ -133,10 +144,18 @@ def _extract_source_bitrate(text: str) -> int | None:
     return _match_bitrate(text, patterns)
 
 
-def _match_bitrate(text: str, patterns: list[str]) -> int | None:
+def _match_bitrate(text: str, patterns: list[str], skip_audio_lines: bool = False) -> int | None:
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            if skip_audio_lines:
+                # Get the line containing this match and skip if it mentions audio
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                line_end = text.find("\n", match.end())
+                if line_end == -1:
+                    line_end = len(text)
+                line = text[line_start:line_end]
+                if re.search(r"audio", line, re.IGNORECASE):
+                    continue
             value_str = match.group(1).replace(" ", "").replace(",", "")
             unit = match.group(2).lower()
             try:
@@ -346,4 +365,21 @@ def _extract_tvdb(text: str) -> str | None:
     match = re.search(r"(?:thetvdb|tvdb)\.com\S*?(\d{4,})", text, re.IGNORECASE)
     if match:
         return match.group(1)
+    return None
+
+
+def _extract_video_profile(text: str) -> str | None:
+    """Extract HDR format from NFO text."""
+    # Order matters — match most specific first
+    profiles = [
+        (r"HDR10\+", "HDR10+"),
+        (r"Dolby\s*Vision", "DV"),
+        (r"\bDV\b", "DV"),
+        (r"\bHDR10\b", "HDR10"),
+        (r"\bHDR\b", "HDR10"),
+        (r"\bSDR\b", "SDR"),
+    ]
+    for pattern, name in profiles:
+        if re.search(pattern, text, re.IGNORECASE):
+            return name
     return None

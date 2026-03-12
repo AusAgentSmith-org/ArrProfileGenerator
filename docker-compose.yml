@@ -140,5 +140,28 @@ services:
     restart: "no"
     profiles: ["tools"]
 
+  wizard:
+    build:
+      context: .
+      dockerfile: services/wizard/Dockerfile
+    volumes:
+      - ./shared:/app/shared:ro
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-profsync}
+      - POSTGRES_USER=${POSTGRES_USER:-profsync}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
+
 volumes:
   pgdata:

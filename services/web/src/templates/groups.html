@@ -16,6 +16,8 @@
                     <th>Releases</th>
                     <th>Tier</th>
                     <th>TRaSH Tier</th>
+                    <th>Top Codec</th>
+                    <th>HDR%</th>
                     <th>Confidence</th>
                     <th>Nuke Rate</th>
                     <th>Avg CRF</th>
@@ -45,6 +47,29 @@
                             {% else %}
                                 <span class="badge tier-trash-{{ best.trash_tier_number }}" title="{{ best.trash_tier_name }}">T{{ best.trash_tier_number }}</span>
                                 <span style="font-size: 10px; color: #8b949e;">{{ best.trash_tier_category }}</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.codec_distribution %}
+                            {% set top_codec = p.codec_distribution|dictsort(by='value', reverse=true)|first %}
+                            {{ top_codec[0] }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.video_profile_distribution %}
+                            {% set ns = namespace(hdr_pct=0) %}
+                            {% for k, v in p.video_profile_distribution.items() if k != 'SDR' %}
+                                {% set ns.hdr_pct = ns.hdr_pct + v %}
+                            {% endfor %}
+                            {% if ns.hdr_pct > 0 %}
+                                {{ "%.0f"|format(ns.hdr_pct * 100) }}%
+                            {% else %}
+                                —
                             {% endif %}
                         {% else %}
                             —

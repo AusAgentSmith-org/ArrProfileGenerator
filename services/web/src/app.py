@@ -89,11 +89,17 @@ def group_detail(request: Request, group_name: str):
             .all()
         )
         recent = (
-            session.query(ParsedRelease, Release)
+            session.query(ParsedRelease, Release, ReleaseQuality)
             .join(Release, ParsedRelease.release_id == Release.id)
+            .outerjoin(ReleaseQuality, ReleaseQuality.release_id == Release.id)
             .filter(ParsedRelease.group == group_name)
             .order_by(desc(Release.pre_at))
             .limit(50)
+            .all()
+        )
+        trash_tiers = (
+            session.query(TrashGroupTier)
+            .filter(TrashGroupTier.group_name == group_name)
             .all()
         )
     return templates.TemplateResponse("group_detail.html", {
@@ -101,6 +107,7 @@ def group_detail(request: Request, group_name: str):
         "group_name": group_name,
         "profiles": profiles,
         "recent": recent,
+        "trash_tiers": trash_tiers,
     })
 
 
