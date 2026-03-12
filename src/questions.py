@@ -249,7 +249,7 @@ def run_wizard(teststack: bool = False) -> UserProfile:
                 value="permissive",
             ),
         ],
-        default="Balanced — B tier and above (default; unknown groups are allowed)",
+        default="balanced",
     ).ask()
 
     # 12. Auto-upgrade

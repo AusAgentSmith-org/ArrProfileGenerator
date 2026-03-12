@@ -152,11 +152,16 @@ def build_all_custom_formats(
     return cfs
 
 
-# Quality name constants (as they appear in Sonarr/Radarr schemas)
-HD_QUALITIES = ["Bluray-1080p", "WEBDL-1080p", "WEBRip-1080p"]
-HD_REMUX = "Remux-1080p"
-UHD_QUALITIES = ["Bluray-2160p", "WEBDL-2160p", "WEBRip-2160p"]
-UHD_REMUX = "Remux-2160p"
+# Quality exclusions — always disable these low-quality sources
+QUALITY_EXCLUSIONS = {
+    "RAW-HD", "Unknown", "TELECINE", "TELESYNC", "CAM", "WORKPRINT",
+}
+
+# Quality cutoff points — the highest quality we want to accept
+QUALITY_CUTOFFS = {
+    "uhd": "Bluray-2160p",  # 4K and above
+    "hd": "Bluray-1080p",   # 1080p and above
+}
 
 
 def _find_quality_item(schema_items: list[dict], name: str) -> dict | None:
@@ -180,6 +185,54 @@ def _get_quality_id(schema_items: list[dict], name: str) -> int | None:
     return None
 
 
+def _get_all_quality_names(schema_items: list[dict]) -> list[tuple[int, str]]:
+    """Get all quality names from schema as (index, name) tuples in order."""
+    qualities = []
+    for idx, item in enumerate(schema_items):
+        name = item.get("quality", {}).get("name", "")
+        if name:
+            qualities.append((idx, name))
+        # Also check sub-items (quality groups)
+        if item.get("items"):
+            for sub_idx, sub in enumerate(item["items"]):
+                sub_name = sub.get("quality", {}).get("name", "")
+                if sub_name:
+                    qualities.append((idx, sub_name))
+    return qualities
+
+
+def _should_include_quality(quality_name: str, resolution: str, include_remux: bool) -> bool:
+    """Determine if a quality should be enabled based on resolution and preferences."""
+    # Always exclude bad quality sources
+    if quality_name in QUALITY_EXCLUSIONS:
+        return False
+
+    # Get the cutoff for this resolution
+    if resolution == "both":
+        # For "both", we want everything (nothing excluded by resolution)
+        pass
+    elif resolution == "uhd":
+        # For UHD, exclude 1080p and lower (unless it's a group we want)
+        # This is a bit tricky since quality hierarchy isn't linear
+        # For now, exclude HD remux and obvious 1080p qualities
+        if "1080p" in quality_name and "Remux" in quality_name:
+            return False
+        if quality_name == "Remux-1080p":
+            return False
+    elif resolution == "hd":
+        # For HD only, exclude 2160p/4K qualities
+        if "2160p" in quality_name:
+            return False
+        if "4K" in quality_name or "UHD" in quality_name:
+            return False
+
+    # Exclude remux if not wanted
+    if not include_remux and "Remux" in quality_name:
+        return False
+
+    return True
+
+
 def build_quality_profile(
     profile: UserProfile,
     schema: dict,
@@ -194,29 +247,18 @@ def build_quality_profile(
     """
     schema_items = schema.get("items", [])
 
-    # Determine which qualities to enable
-    enabled_names: list[str] = []
-    if resolution in ("uhd", "both"):
-        enabled_names.extend(UHD_QUALITIES)
-        if profile.include_remux and profile.storage_constraint != "tight":
-            enabled_names.append(UHD_REMUX)
-    if resolution in ("hd", "both"):
-        enabled_names.extend(HD_QUALITIES)
-        if profile.include_remux and profile.storage_constraint != "tight":
-            enabled_names.append(HD_REMUX)
+    # Get all available qualities from schema
+    all_qualities = _get_all_quality_names(schema_items)
 
-    # If tight storage, prefer WEB over Bluray by removing Bluray
+    # Determine which qualities to enable using the new logic
+    enabled_names: list[str] = []
+    for _, quality_name in all_qualities:
+        if _should_include_quality(quality_name, resolution, profile.include_remux and profile.storage_constraint != "tight"):
+            enabled_names.append(quality_name)
+
+    # If tight storage, remove Bluray and Remux, keep only WEB
     if profile.storage_constraint == "tight":
         enabled_names = [n for n in enabled_names if "Bluray" not in n and "Remux" not in n]
-        # Ensure we have at least WEB qualities
-        if resolution in ("uhd", "both"):
-            for q in ["WEBDL-2160p", "WEBRip-2160p"]:
-                if q not in enabled_names:
-                    enabled_names.append(q)
-        if resolution in ("hd", "both"):
-            for q in ["WEBDL-1080p", "WEBRip-1080p"]:
-                if q not in enabled_names:
-                    enabled_names.append(q)
 
     # Build items list — mark matching ones as allowed
     items = []
@@ -240,22 +282,37 @@ def build_quality_profile(
 
         items.append(new_item)
 
-    # Determine cutoff quality
-    if resolution == "uhd" or resolution == "both":
-        if profile.include_remux and profile.storage_constraint != "tight":
-            cutoff_name = UHD_REMUX
-        else:
-            cutoff_name = "Bluray-2160p" if profile.storage_constraint != "tight" else "WEBDL-2160p"
-    else:
-        if profile.include_remux and profile.storage_constraint != "tight":
-            cutoff_name = HD_REMUX
-        else:
-            cutoff_name = "Bluray-1080p" if profile.storage_constraint != "tight" else "WEBDL-1080p"
+    # Determine cutoff quality — should be the best quality for this resolution
+    # Priority: Remux > Bluray > WEBDL > WEBRip
+    cutoff_name = None
 
-    cutoff_id = _get_quality_id(schema_items, cutoff_name)
-    # Fallback to first enabled quality
-    if cutoff_id is None and enabled_names:
-        cutoff_id = _get_quality_id(schema_items, enabled_names[0])
+    # Get the expected cutoff for this resolution
+    expected_cutoff = QUALITY_CUTOFFS.get(resolution, "Bluray-2160p")
+
+    # Try to find the expected cutoff or equivalent
+    if resolution == "uhd":
+        for candidate in ["Remux-2160p", "Bluray-2160p", "WEBDL-2160p", "WEBRip-2160p"]:
+            if candidate in enabled_names:
+                cutoff_name = candidate
+                break
+    elif resolution == "hd":
+        for candidate in ["Remux-1080p", "Bluray-1080p", "WEBDL-1080p", "WEBRip-1080p"]:
+            if candidate in enabled_names:
+                cutoff_name = candidate
+                break
+    else:  # both
+        # For "both", prefer highest UHD, then fall back to HD
+        for candidate in ["Remux-2160p", "Bluray-2160p", "WEBDL-2160p", "WEBRip-2160p",
+                         "Remux-1080p", "Bluray-1080p", "WEBDL-1080p", "WEBRip-1080p"]:
+            if candidate in enabled_names:
+                cutoff_name = candidate
+                break
+
+    # Fallback: use the first enabled quality if we couldn't find a good one
+    if cutoff_name is None and enabled_names:
+        cutoff_name = enabled_names[0]
+
+    cutoff_id = _get_quality_id(schema_items, cutoff_name) if cutoff_name else None
     if cutoff_id is None:
         cutoff_id = 0
 
@@ -289,5 +346,6 @@ def build_quality_profile(
         "items": items,
         "minFormatScore": min_score,
         "cutoffFormatScore": cutoff_format_score,
+        "minUpgradeFormatScore": max(1, min_score),
         "formatItems": format_items,
     }

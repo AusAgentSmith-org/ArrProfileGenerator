@@ -41,7 +41,7 @@ class ArrClient:
 
     def _put(self, path: str, data: dict) -> dict:
         resp = self.session.put(self._url(path), json=data, timeout=30)
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 202):
             raise ArrClientError(
                 f"{self.app_name} PUT {path} failed: {resp.status_code} {resp.text[:300]}"
             )
@@ -143,3 +143,15 @@ class ArrClient:
             "movieIds": movie_ids,
             "qualityProfileId": quality_profile_id,
         })
+
+    def get_root_folders(self) -> list:
+        """GET /api/v3/rootfolder — returns list of root folders."""
+        return self._get("/rootfolder")
+
+    def update_root_folder(self, folder: dict) -> dict:
+        """PUT /api/v3/rootfolder/{id} — update root folder default quality profile."""
+        return self._put(f"/rootfolder/{folder['id']}", folder)
+
+    def create_root_folder(self, path: str) -> dict:
+        """POST /api/v3/rootfolder — create a new root folder."""
+        return self._post("/rootfolder", {"path": path})

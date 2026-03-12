@@ -59,14 +59,19 @@ In `--teststack` mode:
 
 ## Building a Standalone Binary
 
+### Linux/macOS
 ```bash
 pip install pyinstaller
 ./build.sh
 ```
+Output: `./dist/profsync-wizard`
 
-Output:
-- Linux/macOS: `./dist/profsync-wizard`
-- Windows: `./dist/profsync-wizard.exe`
+### Windows (PowerShell)
+```powershell
+pip install pyinstaller
+pyinstaller build.spec --clean -y
+```
+Output: `dist\profsync-wizard.exe`
 
 ## Architecture
 

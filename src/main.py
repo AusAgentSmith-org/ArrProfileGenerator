@@ -179,6 +179,7 @@ def main():
                 print(f"  ERROR: Failed to bulk update series: {e}")
             print()
 
+
     if profile.radarr:
         print(f"Configuring Radarr ({profile.radarr.url})...")
         client = ArrClient(profile.radarr.url, profile.radarr.api_key, "Radarr")
@@ -198,6 +199,7 @@ def main():
             except ArrClientError as e:
                 print(f"  ERROR: Failed to bulk update movies: {e}")
             print()
+
 
     # 5. Final instructions
     print("Done! Next steps:")

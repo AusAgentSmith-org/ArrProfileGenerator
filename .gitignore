@@ -1,12 +1,48 @@
+# Environment
 .env
+.env.local
+*.env
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.venv/
+*.pyd
+.Python
 *.egg-info/
+*.egg
 dist/
 build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-*
+
+# PyInstaller
+*.spec
+
+# Test stack (local development only)
+test/.env
+test/sonarr-config/
+test/radarr-config/
+test/sonarr-downloads/
+test/radarr-downloads/
+test/sonarr-tv/
+test/radarr-movies/
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Claude Code (local settings)
+.claude/settings.local.json
