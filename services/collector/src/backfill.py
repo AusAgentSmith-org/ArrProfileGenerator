@@ -1,7 +1,8 @@
-"""REST client for predb.ovh historical backfill."""
+"""REST client for api.predb.net historical backfill."""
 
 import asyncio
 import time
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -13,6 +14,24 @@ from src.categories import is_relevant_category
 
 logger = setup_logging("collector.backfill")
 
+# Sections to backfill — 100 pages × 20 per page = 2000 releases each
+BACKFILL_SECTIONS = [
+    "TV-WEB-HD-X264",
+    "TV-WEB-HD-X265",
+    "X264",
+    "X265",
+    "BLURAY",
+    "UHD",
+    "DVDR",
+    "XVID",
+    "TV-BLURAY",
+    "TV-SD",
+    "TV-XVID",
+    "TV-UHD",
+    "TV-X264",
+    "TV-X265",
+]
+
 
 class BackfillClient:
     def __init__(self) -> None:
@@ -21,90 +40,108 @@ class BackfillClient:
         self.rate_limit = settings.predb_rate_limit
         self._request_times: list[float] = []
 
-    async def run_initial_backfill(self, pages: int = 50) -> None:
-        """Fetch recent releases via REST API for initial data seeding."""
-        logger.info("Starting backfill — fetching %d pages", pages)
-        total_enqueued = 0
+    async def run_initial_backfill(self) -> None:
+        """Fetch recent releases per section for initial data seeding."""
+        logger.info("Starting backfill across %d sections", len(BACKFILL_SECTIONS))
+        grand_total = 0
 
         async with aiohttp.ClientSession() as session:
-            for page in range(pages):
-                await self._respect_rate_limit()
+            for section in BACKFILL_SECTIONS:
+                total = await self._backfill_section(session, section)
+                grand_total += total
+                logger.info("Section %s complete — %d releases enqueued", section, total)
 
-                try:
-                    releases = await self._fetch_page(session, page)
-                except Exception:
-                    logger.exception("Backfill error on page %d", page)
+        logger.info("Backfill complete — %d releases enqueued total", grand_total)
+
+    async def _backfill_section(
+        self, session: aiohttp.ClientSession, section: str, pages: int = 100
+    ) -> int:
+        total_enqueued = 0
+
+        for page in range(1, pages + 1):
+            await self._respect_rate_limit()
+
+            try:
+                releases = await self._fetch_page(session, page, section)
+            except Exception:
+                logger.exception("Backfill error on %s page %d", section, page)
+                continue
+
+            if not releases:
+                logger.info("No more releases for %s at page %d", section, page)
+                break
+
+            page_enqueued = 0
+            for release in releases:
+                category = release.get("section", "")
+                if not is_relevant_category(category):
                     continue
 
-                if not releases:
-                    logger.info("No more releases at page %d, backfill complete", page)
-                    break
+                pretime = release.get("pretime", 0)
+                pre_at = datetime.fromtimestamp(pretime, tz=timezone.utc).isoformat() if pretime else ""
 
-                page_enqueued = 0
-                for release in releases:
-                    category = release.get("cat", "")
-                    if not is_relevant_category(category):
-                        continue
+                message = {
+                    "source": "backfill",
+                    "action": "insert",
+                    "release": {
+                        "predb_id": release.get("id"),
+                        "name": release.get("release", ""),
+                        "team": release.get("group", ""),
+                        "category": category,
+                        "genre": release.get("genre", ""),
+                        "url": release.get("url", ""),
+                        "size_kb": release.get("size"),
+                        "files": release.get("files"),
+                        "pre_at": pre_at,
+                    },
+                }
 
-                    message = {
-                        "source": "backfill",
-                        "action": "insert",
-                        "release": {
-                            "predb_id": release.get("id"),
-                            "name": release.get("name", ""),
-                            "team": release.get("team", ""),
-                            "category": category,
-                            "genre": release.get("genre", ""),
-                            "url": release.get("url", ""),
-                            "size_kb": release.get("size"),
-                            "files": release.get("files"),
-                            "pre_at": release.get("preAt", ""),
-                        },
+                status = release.get("status", 0)
+                if status != 0:
+                    message["nuke"] = {
+                        "nuke_id": None,
+                        "type": "nuke" if status == 1 else "unnuke",
+                        "reason": release.get("reason", ""),
+                        "network": "",
+                        "nuked_at": pre_at,
                     }
 
-                    nuke = release.get("nuke")
-                    if nuke:
-                        message["nuke"] = {
-                            "nuke_id": nuke.get("id"),
-                            "type": nuke.get("type", "nuke"),
-                            "reason": nuke.get("reason", ""),
-                            "network": nuke.get("net", ""),
-                            "nuked_at": nuke.get("nukeAt", ""),
-                        }
+                enqueue(self.redis, QUEUE_RAW_RELEASES, message)
+                page_enqueued += 1
 
-                    enqueue(self.redis, QUEUE_RAW_RELEASES, message)
-                    page_enqueued += 1
+            total_enqueued += page_enqueued
 
-                total_enqueued += page_enqueued
-                logger.info(
-                    "Backfill page %d: %d releases enqueued (%d total)",
-                    page,
-                    page_enqueued,
-                    total_enqueued,
-                )
-
-        logger.info("Backfill complete — %d releases enqueued", total_enqueued)
+        return total_enqueued
 
     async def _fetch_page(
-        self, session: aiohttp.ClientSession, page: int, count: int = 100
+        self, session: aiohttp.ClientSession, page: int, section: str
     ) -> list[dict]:
         url = f"{self.base_url}/"
-        params = {"count": count, "page": page}
+        params = {"page": page, "section": section}
 
-        async with session.get(url, params=params) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        for attempt in range(5):
+            async with session.get(url, params=params) as resp:
+                if resp.status == 429:
+                    wait = 10 * (attempt + 1)
+                    logger.warning("Rate limited on %s page %d, waiting %ds", section, page, wait)
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = await resp.json()
+                break
+        else:
+            logger.error("Failed to fetch %s page %d after retries", section, page)
+            return []
 
         if data.get("status") != "success":
             logger.warning("API error: %s", data.get("message", "unknown"))
             return []
 
-        return data.get("data", {}).get("rows", [])
+        return data.get("data", [])
 
     async def _respect_rate_limit(self) -> None:
-        """Enforce predb.ovh rate limit: max N requests per 60 seconds."""
+        """Enforce rate limit: max N requests per 60 seconds."""
         now = time.monotonic()
-        # Purge old timestamps
         self._request_times = [t for t in self._request_times if now - t < 60]
 
         if len(self._request_times) >= self.rate_limit:

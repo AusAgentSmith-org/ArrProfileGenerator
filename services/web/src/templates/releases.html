@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set active = "releases" %}
+{% block title %}ProfSync - Releases{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 16px; color: #f0f6fc;">Recent Releases ({{ releases|length }})</h2>
+
+<div class="panel">
+    <div class="scroll-table" style="max-height: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Release Name</th>
+                    <th>Group</th>
+                    <th>Res</th>
+                    <th>Source</th>
+                    <th>Codec</th>
+                    <th>Audio</th>
+                    <th>Type</th>
+                    <th>Category</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in releases %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 11px; color: #8b949e;">{{ r.Release.pre_at.strftime('%Y-%m-%d %H:%M') if r.Release.pre_at else '—' }}</td>
+                    <td style="font-size: 12px; word-break: break-all;">{{ r.Release.name }}</td>
+                    <td><a href="/groups/{{ r.ParsedRelease.group }}">{{ r.ParsedRelease.group }}</a></td>
+                    <td><span class="badge badge-res">{{ r.ParsedRelease.resolution }}</span></td>
+                    <td>{{ r.ParsedRelease.source }}</td>
+                    <td>{{ r.ParsedRelease.video_codec }}</td>
+                    <td>{{ r.ParsedRelease.audio_codec }}{% if r.ParsedRelease.audio_atmos %} Atmos{% endif %}</td>
+                    <td><span class="badge {% if r.ParsedRelease.media_type == 'movie' %}badge-movie{% else %}badge-series{% endif %}">{{ r.ParsedRelease.media_type }}</span></td>
+                    <td style="font-size: 11px; color: #8b949e;">{{ r.Release.category }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="refresh-note" style="text-align: center; margin-top: 16px;">
+    Auto-refreshes every 30 seconds
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>setTimeout(() => location.reload(), 30000);</script>
+{% endblock %}

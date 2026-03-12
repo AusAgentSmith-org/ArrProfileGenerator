@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set active = "groups" %}
+{% block title %}ProfSync - {{ group_name }}{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 16px; color: #f0f6fc;">
+    <a href="/groups" style="color: #8b949e;">Groups</a> / {{ group_name }}
+</h2>
+
+{% if profiles %}
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+    {% for p in profiles %}
+    <div class="stat-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="badge badge-res">{{ p.resolution or 'all' }}</span>
+            <span class="badge {% if p.media_type == 'movie' %}badge-movie{% else %}badge-series{% endif %}">{{ p.media_type }}</span>
+            {% set tier = (p.computed_tier or 'unranked')|replace('+', '-plus') %}
+            <span class="badge tier-{{ tier|lower }}">{{ p.computed_tier or 'Unranked' }}</span>
+        </div>
+        <table style="font-size: 12px; width: 100%;">
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">Releases</td><td style="text-align: right; border: none; padding: 2px 0;">{{ p.release_count }}</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">Nuke Rate</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.1f"|format(p.nuke_rate * 100) if p.nuke_rate is not none else '—' }}%</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">Avg CRF</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.1f"|format(p.avg_crf) if p.avg_crf is not none else '—' }}</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">CRF Std Dev</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.2f"|format(p.crf_std_dev) if p.crf_std_dev is not none else '—' }}</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">Avg Bitrate</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.0f"|format(p.avg_video_bitrate_kbps) if p.avg_video_bitrate_kbps else '—' }} kbps</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">NFO Coverage</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.0f"|format(p.nfo_coverage * 100) if p.nfo_coverage is not none else '—' }}%</td></tr>
+            <tr><td style="color: #8b949e; border: none; padding: 2px 0;">Confidence</td><td style="text-align: right; border: none; padding: 2px 0;">{{ "%.0f"|format(p.tier_confidence * 100) if p.tier_confidence else '—' }}%</td></tr>
+        </table>
+
+        {% if p.audio_format_distribution %}
+        <div style="margin-top: 8px; font-size: 11px; color: #8b949e;">
+            <strong>Audio:</strong>
+            {% for fmt, pct in p.audio_format_distribution.items() %}
+                {{ fmt }} ({{ "%.0f"|format(pct * 100) }}%){% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if p.source_distribution %}
+        <div style="margin-top: 4px; font-size: 11px; color: #8b949e;">
+            <strong>Source:</strong>
+            {% for src, pct in p.source_distribution.items() %}
+                {{ src }} ({{ "%.0f"|format(pct * 100) }}%){% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if p.tier_factors %}
+        <div style="margin-top: 8px; font-size: 11px; color: #484f58;">
+            <strong>Score:</strong> {{ p.tier_factors.get('total_score', '—') }}/100
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color: #8b949e;">No profile data for this group yet.</p>
+{% endif %}
+
+<div class="panel" style="margin-top: 24px;">
+    <div class="panel-header">Recent Releases ({{ recent|length }})</div>
+    <div class="scroll-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Release Name</th>
+                    <th>Resolution</th>
+                    <th>Source</th>
+                    <th>Codec</th>
+                    <th>Audio</th>
+                    <th>Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recent %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 11px; color: #8b949e;">{{ r.Release.pre_at.strftime('%Y-%m-%d %H:%M') if r.Release.pre_at else '—' }}</td>
+                    <td style="font-size: 12px; word-break: break-all;">{{ r.Release.name }}</td>
+                    <td><span class="badge badge-res">{{ r.ParsedRelease.resolution }}</span></td>
+                    <td>{{ r.ParsedRelease.source }}</td>
+                    <td>{{ r.ParsedRelease.video_codec }}</td>
+                    <td>{{ r.ParsedRelease.audio_codec }}{% if r.ParsedRelease.audio_atmos %} Atmos{% endif %}</td>
+                    <td><span class="badge {% if r.ParsedRelease.media_type == 'movie' %}badge-movie{% else %}badge-series{% endif %}">{{ r.ParsedRelease.media_type }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

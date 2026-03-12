@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active = "groups" %}
+{% block title %}ProfSync - Groups{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 16px; color: #f0f6fc;">Release Groups ({{ profiles|length }} profiles)</h2>
+
+<div class="panel">
+    <div class="scroll-table" style="max-height: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Group</th>
+                    <th>Resolution</th>
+                    <th>Type</th>
+                    <th>Releases</th>
+                    <th>Tier</th>
+                    <th>Confidence</th>
+                    <th>Nuke Rate</th>
+                    <th>Avg CRF</th>
+                    <th>NFO Coverage</th>
+                    <th>Avg Bitrate</th>
+                    <th>First Seen</th>
+                    <th>Last Seen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in profiles %}
+                <tr>
+                    <td><a href="/groups/{{ p.group_name }}">{{ p.group_name }}</a></td>
+                    <td><span class="badge badge-res">{{ p.resolution or '—' }}</span></td>
+                    <td><span class="badge {% if p.media_type == 'movie' %}badge-movie{% else %}badge-series{% endif %}">{{ p.media_type }}</span></td>
+                    <td>{{ p.release_count }}</td>
+                    <td>
+                        {% set tier = (p.computed_tier or 'unranked')|replace('+', '-plus') %}
+                        <span class="badge tier-{{ tier|lower }}">{{ p.computed_tier or '—' }}</span>
+                    </td>
+                    <td>{{ "%.0f"|format(p.tier_confidence * 100) if p.tier_confidence else '—' }}%</td>
+                    <td>{{ "%.1f"|format(p.nuke_rate * 100) if p.nuke_rate is not none else '—' }}%</td>
+                    <td>{{ "%.1f"|format(p.avg_crf) if p.avg_crf is not none else '—' }}</td>
+                    <td>{{ "%.0f"|format(p.nfo_coverage * 100) if p.nfo_coverage is not none else '—' }}%</td>
+                    <td>{{ "%.0f"|format(p.avg_video_bitrate_kbps) if p.avg_video_bitrate_kbps else '—' }} kbps</td>
+                    <td style="font-size: 11px; color: #8b949e;">{{ p.first_seen.strftime('%Y-%m-%d') if p.first_seen else '—' }}</td>
+                    <td style="font-size: 11px; color: #8b949e;">{{ p.last_seen.strftime('%Y-%m-%d') if p.last_seen else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

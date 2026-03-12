@@ -13,10 +13,10 @@ class Settings(BaseSettings):
     redis_host: str = "redis"
     redis_port: int = 6379
 
-    # predb.ovh
-    predb_ws_url: str = "wss://predb.ovh/api/v1/ws"
-    predb_api_url: str = "https://predb.ovh/api/v1"
-    predb_rate_limit: int = 30
+    # predb.net
+    predb_ws_url: str = ""
+    predb_api_url: str = "https://api.predb.net/v1"
+    predb_rate_limit: int = 60
 
     # xREL
     xrel_api_url: str = "https://api.xrel.to/v2"

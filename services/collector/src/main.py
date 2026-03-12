@@ -27,11 +27,12 @@ async def main() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, handle_signal)
 
-    # Run initial backfill then switch to websocket for live updates
+    # Run backfill and poller concurrently
     try:
-        await backfill.run_initial_backfill()
-        await ws_collector.run(shutdown_event)
-    except asyncio.CancelledError:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(backfill.run_initial_backfill())
+            tg.create_task(ws_collector.run(shutdown_event))
+    except* asyncio.CancelledError:
         logger.info("Collector cancelled")
     finally:
         logger.info("Collector shutdown complete")

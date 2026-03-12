@@ -1,9 +1,9 @@
-"""WebSocket client for predb.ovh real-time release feed."""
+"""Polling client for api.predb.net real-time release feed."""
 
 import asyncio
-import json
+from datetime import datetime, timezone
 
-import websockets
+import aiohttp
 
 from profsync.config import settings
 from profsync.logging import setup_logging
@@ -11,93 +11,97 @@ from profsync.queue import QUEUE_RAW_RELEASES, enqueue, get_redis
 
 from src.categories import is_relevant_category
 
-logger = setup_logging("collector.websocket")
+logger = setup_logging("collector.poller")
+
+REDIS_KEY_LAST_ID = "collector:last_predb_id"
+POLL_INTERVAL = 30  # seconds
 
 
 class WebSocketCollector:
+    """Polls api.predb.net every 30s for new releases."""
+
     def __init__(self) -> None:
         self.redis = get_redis()
+        self.base_url = settings.predb_api_url
         self.stats = {"received": 0, "enqueued": 0, "filtered": 0}
 
     async def run(self, shutdown_event: asyncio.Event) -> None:
-        """Connect to predb.ovh WebSocket and process releases."""
+        logger.info("Starting poller (interval: %ds)", POLL_INTERVAL)
         while not shutdown_event.is_set():
             try:
-                await self._connect_and_listen(shutdown_event)
-            except websockets.ConnectionClosed:
-                logger.warning("WebSocket connection closed, reconnecting in 5s...")
-                await asyncio.sleep(5)
+                await self._poll()
             except Exception:
-                logger.exception("WebSocket error, reconnecting in 10s...")
-                await asyncio.sleep(10)
+                logger.exception("Poll error")
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=POLL_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
 
-    async def _connect_and_listen(self, shutdown_event: asyncio.Event) -> None:
-        logger.info("Connecting to %s", settings.predb_ws_url)
-        async with websockets.connect(settings.predb_ws_url) as ws:
-            logger.info("Connected to predb.ovh WebSocket")
+    async def _poll(self) -> None:
+        last_id = int(self.redis.get(REDIS_KEY_LAST_ID) or 0)
 
-            while not shutdown_event.is_set():
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
-                except asyncio.TimeoutError:
-                    # Send ping to keep connection alive
-                    await ws.ping()
-                    continue
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.base_url}/", params={"page": 1}) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
-                self._process_message(raw)
+        releases = data.get("data", [])
+        self.stats["received"] += len(releases)
 
-    def _process_message(self, raw: str) -> None:
-        self.stats["received"] += 1
-
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            logger.warning("Invalid JSON from WebSocket: %s", raw[:200])
+        new_releases = [r for r in releases if r.get("id", 0) > last_id]
+        if not new_releases:
             return
 
-        action = data.get("action", "")
-        release = data.get("body", data)
+        new_max_id = max(r["id"] for r in new_releases)
 
-        # We care about new releases and nuke events
-        if action not in ("insert", "update", "nuke", "unnuke", "modnuke", ""):
-            return
+        for release in new_releases:
+            category = release.get("section", "")
+            if not is_relevant_category(category):
+                self.stats["filtered"] += 1
+                continue
 
-        category = release.get("cat", "")
-        if not is_relevant_category(category):
-            self.stats["filtered"] += 1
-            return
+            pretime = release.get("pretime", 0)
+            pre_at = datetime.fromtimestamp(pretime, tz=timezone.utc).isoformat() if pretime else ""
 
-        message = {
-            "source": "websocket",
-            "action": action or "insert",
-            "release": {
-                "predb_id": release.get("id"),
-                "name": release.get("name", ""),
-                "team": release.get("team", ""),
-                "category": category,
-                "genre": release.get("genre", ""),
-                "url": release.get("url", ""),
-                "size_kb": release.get("size"),
-                "files": release.get("files"),
-                "pre_at": release.get("preAt", ""),
-            },
-        }
-
-        # Include nuke info if present
-        nuke = release.get("nuke")
-        if nuke:
-            message["nuke"] = {
-                "nuke_id": nuke.get("id"),
-                "type": nuke.get("type", action),
-                "reason": nuke.get("reason", ""),
-                "network": nuke.get("net", ""),
-                "nuked_at": nuke.get("nukeAt", ""),
+            message = {
+                "source": "poll",
+                "action": "insert",
+                "release": {
+                    "predb_id": release.get("id"),
+                    "name": release.get("release", ""),
+                    "team": release.get("group", ""),
+                    "category": category,
+                    "genre": release.get("genre", ""),
+                    "url": release.get("url", ""),
+                    "size_kb": release.get("size"),
+                    "files": release.get("files"),
+                    "pre_at": pre_at,
+                },
             }
 
-        enqueue(self.redis, QUEUE_RAW_RELEASES, message)
-        self.stats["enqueued"] += 1
+            status = release.get("status", 0)
+            if status != 0:
+                message["nuke"] = {
+                    "nuke_id": None,
+                    "type": "nuke" if status == 1 else "unnuke",
+                    "reason": release.get("reason", ""),
+                    "network": "",
+                    "nuked_at": pre_at,
+                }
 
-        if self.stats["enqueued"] % 100 == 0:
+            enqueue(self.redis, QUEUE_RAW_RELEASES, message)
+            self.stats["enqueued"] += 1
+
+        self.redis.set(REDIS_KEY_LAST_ID, new_max_id)
+
+        logger.info(
+            "Poll: %d new releases enqueued (last_id: %d → %d)",
+            len(new_releases),
+            last_id,
+            new_max_id,
+        )
+
+        if self.stats["enqueued"] % 100 == 0 and self.stats["enqueued"] > 0:
             logger.info(
                 "Stats — received: %d, enqueued: %d, filtered: %d",
                 self.stats["received"],

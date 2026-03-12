@@ -40,6 +40,10 @@ services:
       context: .
       dockerfile: services/collector/Dockerfile
     env_file: .env
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,6 +58,10 @@ services:
       context: .
       dockerfile: services/parser/Dockerfile
     env_file: .env
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +76,10 @@ services:
       context: .
       dockerfile: services/nfo-fetcher/Dockerfile
     env_file: .env
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,6 +94,26 @@ services:
       context: .
       dockerfile: services/analyzer/Dockerfile
     env_file: .env
+    dns:
+      - 127.0.0.11
+      - 1.1.1.1
+      - 1.0.0.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: services/web/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
