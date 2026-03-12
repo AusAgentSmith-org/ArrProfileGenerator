@@ -121,3 +121,25 @@ class ArrClient:
         """PUT /api/v3/qualityprofile/{id} — returns profile id."""
         result = self._put(f"/qualityprofile/{profile['id']}", profile)
         return result["id"]
+
+    def get_series(self) -> list:
+        """GET /api/v3/series — returns list of series."""
+        return self._get("/series")
+
+    def get_movies(self) -> list:
+        """GET /api/v3/movie — returns list of movies."""
+        return self._get("/movie")
+
+    def bulk_update_series(self, series_ids: list[int], quality_profile_id: int) -> None:
+        """PUT /api/v3/series/editor — bulk update series with new quality profile."""
+        self._put("/series/editor", {
+            "seriesIds": series_ids,
+            "qualityProfileId": quality_profile_id,
+        })
+
+    def bulk_update_movies(self, movie_ids: list[int], quality_profile_id: int) -> None:
+        """PUT /api/v3/movie/editor — bulk update movies with new quality profile."""
+        self._put("/movie/editor", {
+            "movieIds": movie_ids,
+            "qualityProfileId": quality_profile_id,
+        })

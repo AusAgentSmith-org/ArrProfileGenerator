@@ -1,56 +1,22 @@
-"""ProfSync Configuration Wizard — generates Sonarr/Radarr profiles from DB tier data."""
+"""ProfSync Configuration Wizard — generates Sonarr/Radarr profiles from TRaSH Guides data."""
 
 from __future__ import annotations
 
-import sys
-from collections import defaultdict
-
-from sqlalchemy import func
-
-from profsync.db import get_session
-from profsync.models import GroupProfile
+import questionary
 
 from arr_client import ArrClient, ArrClientError
 from profile_builder import build_all_custom_formats, build_quality_profile
 from questions import UserProfile, run_wizard
+from trash_fetcher import fetch_group_tiers
 
 
 BANNER = """
 ╔══════════════════════════════════════════════════════════╗
 ║               ProfSync Configuration Wizard              ║
 ║                                                          ║
-║  Data-driven quality profiles for Sonarr & Radarr        ║
+║  Sonarr/Radarr setup from TRaSH Guides data              ║
 ╚══════════════════════════════════════════════════════════╝
 """
-
-
-def get_group_tiers(session) -> dict[str, list[str]]:
-    """Query GroupProfile for best tier per group, return {tier: [group_names]}.
-
-    For groups appearing at multiple resolutions, use the best tier achieved.
-    """
-    tier_order = {"A+": 0, "A": 1, "B+": 2, "B": 3, "C+": 4, "C": 5, "D": 6, "F": 7}
-
-    rows = (
-        session.query(GroupProfile.group_name, GroupProfile.computed_tier)
-        .filter(GroupProfile.computed_tier.isnot(None))
-        .all()
-    )
-
-    # Pick best tier per group
-    best: dict[str, str] = {}
-    for group_name, tier in rows:
-        if group_name not in best or tier_order.get(tier, 99) < tier_order.get(
-            best[group_name], 99
-        ):
-            best[group_name] = tier
-
-    # Invert to {tier: [groups]}
-    tiers: dict[str, list[str]] = defaultdict(list)
-    for group_name, tier in best.items():
-        tiers[tier].append(group_name)
-
-    return dict(tiers)
 
 
 def apply_to_app(
@@ -58,15 +24,18 @@ def apply_to_app(
     all_cfs: list[dict],
     profile: UserProfile,
     group_tiers: dict[str, list[str]],
-) -> None:
-    """Apply custom formats and quality profiles to a single Sonarr/Radarr instance."""
+) -> int | None:
+    """Apply custom formats and quality profiles to a single Sonarr/Radarr instance.
+
+    Returns the profile_id of the created/updated profile, or None on failure.
+    """
 
     # 1. Verify connection
     try:
         status = client.verify_connection()
     except ArrClientError as e:
         print(f"  ERROR: Could not connect to {client.app_name}: {e}")
-        return
+        return None
 
     print(f"  Connected to {client.app_name} v{client.version}")
 
@@ -108,7 +77,7 @@ def apply_to_app(
         schema = client.get_quality_profile_schema()
     except ArrClientError as e:
         print(f"  ERROR: Could not fetch quality profile schema: {e}")
-        return
+        return None
 
     # 6. Build and create quality profiles
     profiles_to_create: list[tuple[str, str]] = []
@@ -121,6 +90,7 @@ def apply_to_app(
 
     existing_profiles = client.get_quality_profiles()
     profile_count = 0
+    profile_id = None
 
     for prof_name, res in profiles_to_create:
         qp = build_quality_profile(
@@ -138,10 +108,10 @@ def apply_to_app(
         try:
             if existing:
                 qp["id"] = existing["id"]
-                client.update_quality_profile(qp)
+                profile_id = client.update_quality_profile(qp)
                 print(f"  Updated quality profile: {prof_name}")
             else:
-                client.create_quality_profile(qp)
+                profile_id = client.create_quality_profile(qp)
                 print(f"  Created quality profile: {prof_name}")
             profile_count += 1
         except ArrClientError as e:
@@ -152,6 +122,8 @@ def apply_to_app(
         f"{profile_count} quality profile(s)"
     )
 
+    return profile_id
+
 
 def main():
     print(BANNER)
@@ -160,25 +132,10 @@ def main():
     profile = run_wizard()
     print()
 
-    # 2. Load group tiers from DB
-    session = get_session()
-    try:
-        group_tiers = get_group_tiers(session)
-    finally:
-        session.close()
-
-    total_groups = sum(len(g) for g in group_tiers.values())
-    if total_groups == 0:
-        print("WARNING: No group tier data found in database.")
-        print("Run the analyzer service first to compute group profiles.")
-        print("Continuing with empty group tiers (only codec/audio CFs will be created)...")
-        print()
-
-    tier_summary = ", ".join(
-        f"{tier}: {len(groups)}" for tier, groups in sorted(group_tiers.items())
-    )
-    if tier_summary:
-        print(f"Loaded {total_groups} groups from database ({tier_summary})")
+    # 2. Fetch TRaSH tier data
+    print("Fetching TRaSH tier data...", end="", flush=True)
+    group_tiers = fetch_group_tiers()
+    print(f" done ({sum(len(v) for v in group_tiers.values())} groups across {len(group_tiers)} tiers)")
     print()
 
     # 3. Build custom formats
@@ -190,23 +147,44 @@ def main():
     if profile.sonarr:
         print(f"Configuring Sonarr ({profile.sonarr.url})...")
         client = ArrClient(profile.sonarr.url, profile.sonarr.api_key, "Sonarr")
-        apply_to_app(client, all_cfs, profile, group_tiers)
+        sonarr_profile_id = apply_to_app(client, all_cfs, profile, group_tiers)
         print()
+
+        # Bulk update series if requested
+        if sonarr_profile_id and questionary.confirm(
+            f"Update all existing Sonarr series to use this profile?",
+            default=False,
+        ).ask():
+            try:
+                series = client.get_series()
+                series_ids = [s["id"] for s in series]
+                client.bulk_update_series(series_ids, sonarr_profile_id)
+                print(f"  Updated {len(series_ids)} series")
+            except ArrClientError as e:
+                print(f"  ERROR: Failed to bulk update series: {e}")
+            print()
 
     if profile.radarr:
         print(f"Configuring Radarr ({profile.radarr.url})...")
         client = ArrClient(profile.radarr.url, profile.radarr.api_key, "Radarr")
-        apply_to_app(client, all_cfs, profile, group_tiers)
+        radarr_profile_id = apply_to_app(client, all_cfs, profile, group_tiers)
         print()
 
-    # 5. Print strictness warning
-    if profile.strictness == "strict":
-        print("NOTE: Strict mode is active. Groups not in the ProfSync database")
-        print("will score 0, which is below the minimum format score of 399.")
-        print("This means unknown/new groups will be blocked until they are profiled.")
-        print()
+        # Bulk update movies if requested
+        if radarr_profile_id and questionary.confirm(
+            f"Update all existing Radarr movies to use this profile?",
+            default=False,
+        ).ask():
+            try:
+                movies = client.get_movies()
+                movie_ids = [m["id"] for m in movies]
+                client.bulk_update_movies(movie_ids, radarr_profile_id)
+                print(f"  Updated {len(movie_ids)} movies")
+            except ArrClientError as e:
+                print(f"  ERROR: Failed to bulk update movies: {e}")
+            print()
 
-    # 6. Final instructions
+    # 5. Final instructions
     print("Done! Next steps:")
     print("  1. Open Sonarr/Radarr Settings > Profiles")
     print("  2. Assign 'ProfSync' profiles to your libraries/root folders")

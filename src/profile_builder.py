@@ -7,18 +7,16 @@ import re
 from questions import UserProfile
 
 # Tier → score mapping per strictness level
+# Using TRaSH Guides tier names: Tier 01/02/03 + LQ
 TIER_SCORES: dict[str, dict[str, int]] = {
     "strict": {
-        "A+": 1500, "A": 1000, "B+": 600, "B": 400,
-        "C+": -2000, "C": -4000, "D": -6000, "F": -10000,
+        "Tier 01": 1500, "Tier 02": -2000, "Tier 03": -4000, "LQ": -10000,
     },
     "balanced": {
-        "A+": 1500, "A": 1000, "B+": 600, "B": 400,
-        "C+": -100, "C": -300, "D": -500, "F": -10000,
+        "Tier 01": 1500, "Tier 02": 400, "Tier 03": -100, "LQ": -10000,
     },
     "permissive": {
-        "A+": 1500, "A": 1000, "B+": 600, "B": 200,
-        "C+": 50, "C": 0, "D": -50, "F": -10000,
+        "Tier 01": 1500, "Tier 02": 200, "Tier 03": 50, "LQ": -10000,
     },
 }
 
@@ -48,9 +46,9 @@ def _release_title_spec(name: str, regex: str) -> dict:
 def build_group_custom_formats(
     group_tiers: dict[str, list[str]], profile: UserProfile
 ) -> list[dict]:
-    """Build one CF per tier from DB group data.
+    """Build one CF per tier from TRaSH tier data.
 
-    group_tiers: {"A+": ["FLUX", "DON", ...], "A": [...], ...}
+    group_tiers: {"Tier 01": ["FLUX", "DON", ...], "Tier 02": [...], "LQ": [...]}
     """
     scores = TIER_SCORES[profile.strictness]
     cfs = []
@@ -62,7 +60,7 @@ def build_group_custom_formats(
         escaped = [re.escape(g) for g in sorted(groups)]
         regex = r"\b(" + "|".join(escaped) + r")\b"
 
-        cf_name = f"ProfSync {tier}" if tier != "F" else "ProfSync F/LQ"
+        cf_name = f"ProfSync {tier}"
         cfs.append({
             "name": cf_name,
             "includeCustomFormatWhenRenaming": False,

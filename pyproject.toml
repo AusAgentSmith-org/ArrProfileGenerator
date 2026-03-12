@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "profsync-wizard"
+version = "0.1.0"
+description = "Standalone wizard to configure Sonarr/Radarr from TRaSH Guides data"
+authors = [{name = "sprooty"}]
+requires-python = ">=3.10"
+dependencies = [
+    "questionary>=2.0",
+    "requests>=2.31",
+]
+
+[project.scripts]
+profsync = "main:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-data]
+src = ["py.typed"]

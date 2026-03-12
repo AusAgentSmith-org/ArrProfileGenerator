@@ -1,1 +1,0 @@
-# analyzer uses only shared dependencies (sqlalchemy, etc.)
