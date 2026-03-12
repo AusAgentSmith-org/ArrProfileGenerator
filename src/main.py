@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
+
 import questionary
 
 from arr_client import ArrClient, ArrClientError
@@ -126,10 +129,22 @@ def apply_to_app(
 
 
 def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="ProfSync Configuration Wizard for Sonarr/Radarr",
+        add_help=True,
+    )
+    parser.add_argument(
+        "--teststack",
+        action="store_true",
+        help="Auto-load credentials from test/.env (teststack mode)",
+    )
+    args = parser.parse_args()
+
     print(BANNER)
 
     # 1. Run wizard
-    profile = run_wizard()
+    profile = run_wizard(teststack=args.teststack)
     print()
 
     # 2. Fetch TRaSH tier data

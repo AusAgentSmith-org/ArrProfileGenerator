@@ -1,6 +1,8 @@
 """Interactive prompts for the ProfSync configuration wizard."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
+import os
 
 import questionary
 
@@ -43,29 +45,88 @@ class UserProfile:
         self.wants_hdr = self.hdr_support in ("full", "hdr10")
 
 
-def run_wizard() -> UserProfile:
-    """Run the interactive wizard and return a UserProfile."""
+def load_teststack_credentials() -> tuple[AppConfig | None, AppConfig | None]:
+    """Load Sonarr/Radarr credentials from test/.env if it exists.
+
+    Returns (sonarr_config, radarr_config) or (None, None) if not found.
+    """
+    teststack_env = Path(__file__).parent.parent / "test" / ".env"
+
+    if not teststack_env.exists():
+        return None, None
+
+    # Parse .env file
+    env_vars = {}
+    with open(teststack_env) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    env_vars[key.strip()] = value.strip()
+
+    sonarr_config = None
+    radarr_config = None
+
+    if "SONARR_URL" in env_vars and "SONARR_API_KEY" in env_vars:
+        sonarr_config = AppConfig(
+            url=env_vars["SONARR_URL"],
+            api_key=env_vars["SONARR_API_KEY"],
+        )
+
+    if "RADARR_URL" in env_vars and "RADARR_API_KEY" in env_vars:
+        radarr_config = AppConfig(
+            url=env_vars["RADARR_URL"],
+            api_key=env_vars["RADARR_API_KEY"],
+        )
+
+    return sonarr_config, radarr_config
+
+
+def run_wizard(teststack: bool = False) -> UserProfile:
+    """Run the interactive wizard and return a UserProfile.
+
+    Args:
+        teststack: If True, auto-load credentials from test/.env
+    """
     profile = UserProfile()
 
-    # 1. Sonarr
-    if questionary.confirm("Configure Sonarr?", default=False).ask():
-        url = questionary.text(
-            "Sonarr URL (e.g. http://192.168.1.10:8989):"
-        ).ask()
-        api_key = questionary.text("Sonarr API key:").ask()
-        profile.sonarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
+    if teststack:
+        # Load from teststack .env
+        sonarr_config, radarr_config = load_teststack_credentials()
 
-    # 2. Radarr
-    if questionary.confirm("Configure Radarr?", default=False).ask():
-        url = questionary.text(
-            "Radarr URL (e.g. http://192.168.1.10:7878):"
-        ).ask()
-        api_key = questionary.text("Radarr API key:").ask()
-        profile.radarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
+        if sonarr_config:
+            profile.sonarr = sonarr_config
+            print(f"✓ Loaded Sonarr from teststack ({sonarr_config.url})")
+        if radarr_config:
+            profile.radarr = radarr_config
+            print(f"✓ Loaded Radarr from teststack ({radarr_config.url})")
 
-    if not profile.sonarr and not profile.radarr:
-        print("\nNo apps selected. Nothing to configure.")
-        raise SystemExit(0)
+        if not profile.sonarr and not profile.radarr:
+            print("\nERROR: Could not load teststack credentials from test/.env")
+            print("Run: cd test && ./init-stack.sh")
+            raise SystemExit(1)
+        print()
+    else:
+        # 1. Sonarr
+        if questionary.confirm("Configure Sonarr?", default=False).ask():
+            url = questionary.text(
+                "Sonarr URL (e.g. http://192.168.1.10:8989):"
+            ).ask()
+            api_key = questionary.text("Sonarr API key:").ask()
+            profile.sonarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
+
+        # 2. Radarr
+        if questionary.confirm("Configure Radarr?", default=False).ask():
+            url = questionary.text(
+                "Radarr URL (e.g. http://192.168.1.10:7878):"
+            ).ask()
+            api_key = questionary.text("Radarr API key:").ask()
+            profile.radarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
+
+        if not profile.sonarr and not profile.radarr:
+            print("\nNo apps selected. Nothing to configure.")
+            raise SystemExit(0)
 
     # 3. Resolution
     res = questionary.select(

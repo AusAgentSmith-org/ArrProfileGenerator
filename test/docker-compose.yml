@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: profsync-sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./sonarr-config:/config
+      - ./sonarr-tv:/tv
+      - ./sonarr-downloads:/downloads
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+    networks:
+      - profsync-test
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: profsync-radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./radarr-config:/config
+      - ./radarr-movies:/movies
+      - ./radarr-downloads:/downloads
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+    networks:
+      - profsync-test
+
+networks:
+  profsync-test:
+    driver: bridge
