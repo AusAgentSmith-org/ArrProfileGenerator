@@ -116,7 +116,9 @@ def _extract_video_bitrate(text: str) -> int | None:
     patterns = [
         # "Video Bitrate: 12 345 kbps" or "Video Bitrate : 12345 Kbps"
         r"video\s*(?:bit\s*rate|bitrate)\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
-        # "Bit rate : 12 345 kb/s" (in video section context)
+        # "Bitrate : 4 203 kb/s" (predb.net ETHEL-style NFO)
+        r"bitrate\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
+        # "Bit rate : 12 345 kb/s" (MediaInfo style)
         r"bit\s*rate\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s|mbit/s)",
     ]
     return _match_bitrate(text, patterns)
@@ -167,6 +169,9 @@ def _extract_crf(text: str) -> float | None:
 
 def _extract_video_codec(text: str) -> str | None:
     patterns = [
+        # "Video : AVC (High@L4)" — predb.net ETHEL-style
+        r"video\s*[:\.]\s*(AVC|HEVC|x264|x265|h\.?264|h\.?265)\s*(?:\([^)]*\))?",
+        # Standalone codec mentions
         r"(x265|x264|h\.?265|h\.?264|HEVC|AVC)\s*(?:10[- ]?bit|8[- ]?bit)?",
         r"video\s*codec\s*[:\.]\s*(\S+(?:\s+\S+)?)",
         r"codec\s*(?:id)?\s*[:\.]\s*(?:V_)?(HEVC|AVC|MPEG[24H])",
@@ -246,6 +251,9 @@ def _extract_audio_format(text: str) -> str | None:
 
 def _extract_audio_bitrate(text: str) -> int | None:
     patterns = [
+        # "Audio : English E-AC-3 384 kb/s @ 6 channels" — predb.net style
+        r"audio\s*[:\.]\s*.*?(\d[\d\s,\.]*)\s*(kbps|kb/s|kbit/s|mbps|mb/s)",
+        # "Audio Bitrate : 1234 kbps"
         r"audio\s*(?:bit\s*rate|bitrate)\s*[:\.]\s*([\d\s,\.]+)\s*(kbps|kb/s|kbit/s|mbps|mb/s)",
     ]
     return _match_bitrate(text, patterns)
@@ -253,14 +261,23 @@ def _extract_audio_bitrate(text: str) -> int | None:
 
 def _extract_audio_channels(text: str) -> str | None:
     patterns = [
-        r"channel(?:s|_?layout)?\s*[:\.]\s*(\d+\.\d+)",
+        # "@ 6 channels" — predb.net ETHEL-style
+        r"@\s*(\d+)\s*channel",
+        # "Channels : 5.1" or "channel layout : 7.1"
+        r"channel(?:s|_?layout)?\s*[:\.]\s*(\d+\.?\d*)",
         r"(\d+\.\d+)\s*ch(?:annel)?",
         r"(7\.1|5\.1|2\.1|2\.0|1\.0)\s",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return match.group(1)
+            val = match.group(1)
+            # Convert "6" to "5.1" etc.
+            if val.isdigit():
+                ch = int(val)
+                channel_map = {8: "7.1", 6: "5.1", 3: "2.1", 2: "2.0", 1: "1.0"}
+                return channel_map.get(ch, f"{ch}.0")
+            return val
     return None
 
 
@@ -285,6 +302,8 @@ def _extract_file_size(text: str) -> int | None:
 
 def _extract_runtime(text: str) -> int | None:
     patterns = [
+        # "Duration : 41 min 55 s" — predb.net style
+        r"(?:duration|runtime|run\s*time|length)\s*[:\.]\s*(\d+)\s*min\s+(\d+)\s*s",
         # "Duration: 2h 15min" or "Runtime: 2h15m"
         r"(?:duration|runtime|run\s*time|length)\s*[:\.]\s*(\d+)\s*h\s*(\d+)\s*m",
         # "Duration: 135 min"
@@ -296,11 +315,13 @@ def _extract_runtime(text: str) -> int | None:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             try:
-                if i == 0:  # Xh Ym
-                    return int(match.group(1)) * 60 + int(match.group(2))
-                elif i == 1:  # N min
+                if i == 0:  # Xmin Ys
                     return int(match.group(1))
-                elif i == 2:  # HH:MM:SS
+                elif i == 1:  # Xh Ym
+                    return int(match.group(1)) * 60 + int(match.group(2))
+                elif i == 2:  # N min
+                    return int(match.group(1))
+                elif i == 3:  # HH:MM:SS
                     return int(match.group(1)) * 60 + int(match.group(2))
             except ValueError:
                 continue
@@ -318,6 +339,10 @@ def _extract_imdb(text: str) -> str | None:
 
 
 def _extract_tvdb(text: str) -> str | None:
+    # "URL : https://www.tvmaze.com/shows/59/chicago-fire" — predb.net style
+    match = re.search(r"tvmaze\.com/shows/(\d+)", text, re.IGNORECASE)
+    if match:
+        return match.group(1)
     match = re.search(r"(?:thetvdb|tvdb)\.com\S*?(\d{4,})", text, re.IGNORECASE)
     if match:
         return match.group(1)

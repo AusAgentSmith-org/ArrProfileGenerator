@@ -18,7 +18,9 @@
                     <th>Codec</th>
                     <th>Audio</th>
                     <th>Type</th>
-                    <th>Category</th>
+                    <th>NFO</th>
+                    <th>Bitrate</th>
+                    <th>Audio (NFO)</th>
                 </tr>
             </thead>
             <tbody>
@@ -32,7 +34,33 @@
                     <td>{{ r.ParsedRelease.video_codec }}</td>
                     <td>{{ r.ParsedRelease.audio_codec }}{% if r.ParsedRelease.audio_atmos %} Atmos{% endif %}</td>
                     <td><span class="badge {% if r.ParsedRelease.media_type == 'movie' %}badge-movie{% else %}badge-series{% endif %}">{{ r.ParsedRelease.media_type }}</span></td>
-                    <td style="font-size: 11px; color: #8b949e;">{{ r.Release.category }}</td>
+                    <td>
+                        {% if r.ParsedRelease.nfo_status == 'fetched' %}
+                        <span style="color: #3fb950; font-size: 11px;">
+                            {% if r.ReleaseQuality %}{{ r.ReleaseQuality.nfo_source }}{% else %}yes{% endif %}
+                        </span>
+                        {% elif r.ParsedRelease.nfo_status == 'pending' %}
+                        <span style="color: #d29922; font-size: 11px;">pending</span>
+                        {% elif r.ParsedRelease.nfo_status == 'not_found' %}
+                        <span style="color: #484f58; font-size: 11px;">—</span>
+                        {% else %}
+                        <span style="color: #f85149; font-size: 11px;">{{ r.ParsedRelease.nfo_status }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="white-space: nowrap; font-size: 12px;">
+                        {% if r.ReleaseQuality and r.ReleaseQuality.video_bitrate_kbps %}
+                        {{ "%.1f"|format(r.ReleaseQuality.video_bitrate_kbps / 1000) }} Mbps
+                        {% else %}
+                        <span style="color: #484f58;">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 12px;">
+                        {% if r.ReleaseQuality and r.ReleaseQuality.audio_format_detail %}
+                        {{ r.ReleaseQuality.audio_format_detail }}
+                        {% else %}
+                        <span style="color: #484f58;">—</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
