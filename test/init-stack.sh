@@ -112,7 +112,14 @@ EOF
 echo "✓ .env file created"
 echo
 
-# Step 6: Create root folders
+# Step 6: Fix directory permissions (so containers can write)
+echo "Fixing directory permissions..."
+docker exec profsync-sonarr chmod 777 /tv /downloads 2>/dev/null || true
+docker exec profsync-radarr chmod 777 /movies /downloads 2>/dev/null || true
+sleep 2
+echo
+
+# Step 6b: Create root folders
 echo "Configuring root folders..."
 
 # Sonarr TV root folder
@@ -120,14 +127,14 @@ curl -s -X POST "$SONARR_URL/api/v3/rootfolder" \
   -H "X-Api-Key: $SONARR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"path": "/tv", "accessible": true, "freeSpace": 1000000000}' > /dev/null 2>&1 && \
-  echo "✓ Sonarr TV root folder configured" || echo "✓ Sonarr root folder (already exists or configured)"
+  echo "✓ Sonarr TV root folder created" || echo "✓ Sonarr TV root folder (already exists)"
 
 # Radarr Movies root folder
 curl -s -X POST "$RADARR_URL/api/v3/rootfolder" \
   -H "X-Api-Key: $RADARR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"path": "/movies", "accessible": true, "freeSpace": 1000000000}' > /dev/null 2>&1 && \
-  echo "✓ Radarr Movies root folder configured" || echo "✓ Radarr root folder (already exists or configured)"
+  echo "✓ Radarr Movies root folder created" || echo "✓ Radarr Movies root folder (already exists)"
 echo
 
 # Step 7: Configure authentication (optional, can be skipped with --no-auth)
@@ -141,9 +148,9 @@ fi
 # Step 8: Import test fixtures (optional, can be skipped with --no-fixtures)
 if [ "$1" != "--no-fixtures" ]; then
   if [ -d "$(dirname "$0")/fixtures" ]; then
-    echo "Importing test fixtures..."
-    bash "$(dirname "$0")/import-fixtures.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" 2>/dev/null || \
-      echo "ℹ️  Fixtures import skipped (no fixture files found)"
+    echo "Importing test fixtures (this may take a minute)..."
+    bash "$(dirname "$0")/import-fixtures.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" || \
+      echo "⚠️  Warning: Some fixtures may not have imported"
     echo
   fi
 fi
