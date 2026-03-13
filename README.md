@@ -33,17 +33,16 @@ cd test
 This will:
 1. ✅ Start Sonarr (port 8989) and Radarr (port 7878) containers
 2. ✅ Create root folders and quality profiles
-3. ✅ Configure authentication: **testuser** / **testpass123**
-4. ✅ Import pre-populated libraries (531 TV series, 1209 movies)
-5. ✅ Set local network bypass (no auth needed for 127.0.0.1)
+3. ✅ Disable authentication for easy testing (no login required)
+4. ✅ Import pre-populated libraries (20 TV series, 20 movies for fast testing)
+5. ✅ Extract API keys and save to `.env`
 
 #### Access
 
 ```bash
 # Sonarr: http://localhost:8989
 # Radarr: http://localhost:7878
-# Username: testuser
-# Password: testpass123
+# (No authentication required)
 ```
 
 #### Run Wizard

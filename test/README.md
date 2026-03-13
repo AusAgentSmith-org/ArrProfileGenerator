@@ -15,6 +15,7 @@ This will:
 3. Extract API keys from their config files
 4. Configure root folders
 5. Create `.env` with connection details
+6. Import pre-populated test libraries (20 series, 20 movies)
 
 ## Running the Wizard
 
@@ -50,12 +51,17 @@ cd test/
 
 This will stop containers and optionally remove data volumes.
 
-## Accessing the Web UIs
+## Authentication
 
-- **Sonarr**: http://localhost:8989
-- **Radarr**: http://localhost:7878
+The test stack is configured with **authentication disabled** for simplicity:
+- Web UIs are accessible without login at http://localhost:8989 and http://localhost:7878
+- API calls work without additional authentication (only require the API key header)
+- This is safe for local testing — do not use this config in production
 
-No authentication required by default.
+If you need authentication for testing purposes, you can manually enable it by:
+1. Accessing the web UI
+2. Going to Settings → Security
+3. Configuring username/password and bypass rules
 
 ## Files
 
