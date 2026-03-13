@@ -29,6 +29,7 @@ ENV/
 
 # PyInstaller
 *.spec
+!build.spec
 
 # Test stack (local development only)
 test/.env
