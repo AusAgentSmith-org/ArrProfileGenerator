@@ -264,21 +264,25 @@ def build_quality_profile(
     items = []
     for item in schema_items:
         new_item = dict(item)
-        quality_name = item.get("quality", {}).get("name", "")
-        if quality_name in enabled_names:
-            new_item["allowed"] = True
-        else:
-            new_item["allowed"] = False
 
-        # Handle groups with sub-items
+        # Handle groups with sub-items first so we can derive the group's allowed flag
         if item.get("items"):
             new_sub = []
+            any_child_allowed = False
             for sub in item["items"]:
                 sub_copy = dict(sub)
-                sub_name = sub.get("quality", {}).get("name", "")
+                sub_name = sub.get("quality", {}).get("name") or ""
                 sub_copy["allowed"] = sub_name in enabled_names
+                if sub_copy["allowed"]:
+                    any_child_allowed = True
                 new_sub.append(sub_copy)
             new_item["items"] = new_sub
+            # Group container: allowed if ANY child is enabled
+            new_item["allowed"] = any_child_allowed
+        else:
+            # Individual quality item
+            quality_name = item.get("quality", {}).get("name") or ""
+            new_item["allowed"] = quality_name in enabled_names
 
         items.append(new_item)
 

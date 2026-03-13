@@ -94,6 +94,21 @@ fi
 echo "✓ Radarr API key: ${RADARR_API_KEY:0:10}..."
 echo
 
+# Step 4b: Validate API keys actually work
+echo "Validating API keys..."
+SONARR_STATUS=$(curl -sf -H "X-Api-Key: $SONARR_API_KEY" "$SONARR_URL/api/v3/system/status" 2>/dev/null) || {
+    echo "✗ Sonarr API key is invalid (got non-200 response)"
+    exit 1
+}
+echo "✓ Sonarr API key works"
+
+RADARR_STATUS=$(curl -sf -H "X-Api-Key: $RADARR_API_KEY" "$RADARR_URL/api/v3/system/status" 2>/dev/null) || {
+    echo "✗ Radarr API key is invalid (got non-200 response)"
+    exit 1
+}
+echo "✓ Radarr API key works"
+echo
+
 # Step 5: Create/update .env file
 echo "Writing to $ENV_FILE..."
 cat > "$ENV_FILE" << EOF
@@ -172,3 +187,8 @@ echo
 echo "Run the wizard with:"
 echo "  python ../wizard.py --teststack"
 echo
+
+# Step 9: Run post-deployment validation
+echo "Running post-deployment validation..."
+echo
+bash "$(dirname "$0")/validate-stack.sh"

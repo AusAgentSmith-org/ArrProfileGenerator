@@ -65,15 +65,15 @@ def apply_to_app(
     cf_id_map: dict[str, int] = {}
     cf_count = 0
     if not skip_cfs:
-        for cf in all_cfs:
-            # Remove our internal score key before sending to API
-            cf_payload = {k: v for k, v in cf.items() if k != "_profsync_score"}
-            try:
-                cf_id = client.upsert_custom_format(cf_payload)
-                cf_id_map[cf["name"]] = cf_id
-                cf_count += 1
-            except ArrClientError as e:
-                print(f"  WARNING: Failed to upsert CF '{cf['name']}': {e}")
+        cf_payloads = [
+            {k: v for k, v in cf.items() if k != "_profsync_score"}
+            for cf in all_cfs
+        ]
+        try:
+            cf_id_map = client.bulk_upsert_custom_formats(cf_payloads)
+            cf_count = len(cf_id_map)
+        except ArrClientError as e:
+            print(f"  WARNING: Failed to upsert custom formats: {e}")
 
     # 5. Fetch schema
     try:

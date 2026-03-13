@@ -108,6 +108,28 @@ class ArrClient:
             result = self._post("/customformat", cf)
         return result["id"]
 
+    def bulk_upsert_custom_formats(self, cfs: list[dict]) -> dict[str, int]:
+        """Create or update multiple custom formats. Fetches existing list once.
+
+        Returns a dict mapping CF name → CF id.
+        """
+        existing = self.get_custom_formats()
+        existing_by_name = {e["name"]: e for e in existing}
+        result_map: dict[str, int] = {}
+
+        for cf in cfs:
+            match = existing_by_name.get(cf["name"])
+            if match:
+                cf["id"] = match["id"]
+                result = self._put(f"/customformat/{match['id']}", cf)
+            else:
+                result = self._post("/customformat", cf)
+            result_map[cf["name"]] = result["id"]
+            # Update cache so duplicate names in the batch are handled
+            existing_by_name[cf["name"]] = result
+
+        return result_map
+
     def get_quality_profiles(self) -> list:
         """GET /api/v3/qualityprofile"""
         return self._get("/qualityprofile")
