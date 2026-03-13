@@ -32,9 +32,9 @@ import_to_arr() {
 
     echo "Importing to $app_name from $json_file..."
 
-    # Get root folders
+    # Get root folders (use mounted paths as defaults)
     root_folders=$(curl -s -X GET "$app_url/api/v3/rootfolder" \
-        -H "X-Api-Key: $api_key" | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['path'] if json.load(sys.stdin) else '/data')" 2>/dev/null || echo "$root_folder")
+        -H "X-Api-Key: $api_key" 2>/dev/null | python3 -c "import sys, json; data = json.load(sys.stdin); print(data[0]['path'] if data else '$root_folder')" 2>/dev/null || echo "$root_folder")
 
     profile=$(curl -s -X GET "$app_url/api/v3/qualityprofile" \
         -H "X-Api-Key: $api_key" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data[0]['id'] if data else 1)" 2>/dev/null || echo "1")
