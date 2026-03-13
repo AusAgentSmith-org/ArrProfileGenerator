@@ -137,13 +137,14 @@ curl -s -X POST "$RADARR_URL/api/v3/rootfolder" \
   echo "✓ Radarr Movies root folder created" || echo "✓ Radarr Movies root folder (already exists)"
 echo
 
-# Step 7: Configure authentication (optional, can be skipped with --no-auth)
-if [ "$1" != "--no-auth" ]; then
-  echo "Configuring authentication..."
-  bash "$(dirname "$0")/configure-auth.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" "testuser" "testpass123" 2>/dev/null || \
-    echo "ℹ️  Auth configuration skipped (optional)"
-  echo
-fi
+# Step 7: Configure authentication (skipped by default for test stack - uncomment to enable)
+# Note: Auth configuration can be finicky. For testing, we skip it and you can login via web UI
+# if [ "$1" != "--no-auth" ]; then
+#   echo "Configuring authentication..."
+#   bash "$(dirname "$0")/configure-auth.sh" "$SONARR_URL" "$SONARR_API_KEY" "$RADARR_URL" "$RADARR_API_KEY" "testuser" "testpass123" || \
+#     echo "⚠️  Warning: Auth configuration may have failed"
+#   echo
+# fi
 
 # Step 8: Import test fixtures (optional, can be skipped with --no-fixtures)
 if [ "$1" != "--no-fixtures" ]; then
