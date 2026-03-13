@@ -77,9 +77,6 @@ if ! wait_for_service "$RADARR_URL" "Radarr"; then
 fi
 echo
 
-# Give services a moment to fully initialize and write config files
-sleep 2
-
 # Step 4: Extract API keys
 echo "Extracting API keys..."
 SONARR_API_KEY=$(get_api_key "$SONARR_CONFIG_DIR/config.xml" "Sonarr")
@@ -148,14 +145,6 @@ echo
 #     echo "⚠️  Warning: Auth configuration may have failed"
 #   echo
 # fi
-
-# Step 7.5: Disable authentication for local testing
-echo "Disabling authentication for localhost..."
-docker exec profsync-sonarr sed -i 's/<AuthenticationRequired>Enabled<\/AuthenticationRequired>/<AuthenticationRequired>DisabledForLocalAddresses<\/AuthenticationRequired>/' /config/config.xml
-docker exec profsync-radarr sed -i 's/<AuthenticationRequired>Enabled<\/AuthenticationRequired>/<AuthenticationRequired>DisabledForLocalAddresses<\/AuthenticationRequired>/' /config/config.xml
-sleep 1
-echo "✓ Authentication disabled for localhost"
-echo
 
 # Step 8: Import test fixtures (optional, can be skipped with --no-fixtures)
 if [ "$1" != "--no-fixtures" ]; then
