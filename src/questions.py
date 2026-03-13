@@ -111,17 +111,25 @@ def run_wizard(teststack: bool = False) -> UserProfile:
         # 1. Sonarr
         if questionary.confirm("Configure Sonarr?", default=False).ask():
             url = questionary.text(
-                "Sonarr URL (e.g. http://192.168.1.10:8989):"
+                "Sonarr URL (e.g. http://192.168.1.10:8989):",
+                validate=lambda val: True if val.startswith(("http://", "https://")) else "URL must start with http:// or https://",
             ).ask()
-            api_key = questionary.text("Sonarr API key:").ask()
+            api_key = questionary.text(
+                "Sonarr API key:",
+                validate=lambda val: True if val.strip() else "API key cannot be empty",
+            ).ask()
             profile.sonarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
 
         # 2. Radarr
         if questionary.confirm("Configure Radarr?", default=False).ask():
             url = questionary.text(
-                "Radarr URL (e.g. http://192.168.1.10:7878):"
+                "Radarr URL (e.g. http://192.168.1.10:7878):",
+                validate=lambda val: True if val.startswith(("http://", "https://")) else "URL must start with http:// or https://",
             ).ask()
-            api_key = questionary.text("Radarr API key:").ask()
+            api_key = questionary.text(
+                "Radarr API key:",
+                validate=lambda val: True if val.strip() else "API key cannot be empty",
+            ).ask()
             profile.radarr = AppConfig(url=url.rstrip("/"), api_key=api_key)
 
         if not profile.sonarr and not profile.radarr:
