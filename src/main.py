@@ -75,12 +75,20 @@ def apply_to_app(
         except ArrClientError as e:
             print(f"  WARNING: Failed to upsert custom formats: {e}")
 
-    # 5. Fetch schema
+    # 5. Fetch schema and all existing custom formats
     try:
         schema = client.get_quality_profile_schema()
     except ArrClientError as e:
         print(f"  ERROR: Could not fetch quality profile schema: {e}")
         return None
+
+    # Fetch all CFs so we can include non-ProfSync ones with score 0
+    all_existing_cfs: list[dict] = []
+    if not skip_cfs:
+        try:
+            all_existing_cfs = client.get_custom_formats()
+        except ArrClientError as e:
+            print(f"  WARNING: Could not fetch custom formats list: {e}")
 
     # 6. Build and create quality profiles
     profiles_to_create: list[tuple[str, str]] = []
@@ -97,7 +105,8 @@ def apply_to_app(
 
     for prof_name, res in profiles_to_create:
         qp = build_quality_profile(
-            profile, schema, cf_id_map, all_cfs, prof_name, res
+            profile, schema, cf_id_map, all_cfs, prof_name, res,
+            all_existing_cfs=all_existing_cfs,
         )
 
         # If Sonarr v3, strip format items

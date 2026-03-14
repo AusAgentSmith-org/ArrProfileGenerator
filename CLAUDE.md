@@ -1,91 +1,94 @@
 # ProfSync
 
-Automated release group quality profiling pipeline. An alternative to TRaSH Guides that derives quality rankings from data (PreDB metadata + NFO file analysis) instead of manual community curation.
+CLI wizard that configures Sonarr and Radarr quality profiles using live TRaSH Guides data. Asks 12 questions about your setup, then pushes custom formats and a quality profile directly via the Sonarr/Radarr API.
 
 ## Project Goal
 
-Build a database of release group quality profiles by:
-1. Continuously collecting scene releases from PreDB sources
-2. Parsing release names to extract metadata (resolution, codec, source, group, audio)
-3. Fetching and parsing NFO files for actual encode quality metrics (CRF, bitrate, audio format)
-4. Aggregating per-group statistics to compute data-driven quality tiers
-
-Future: a Q&A wizard that configures Sonarr/Radarr for users based on this data.
+Make quality profile setup effortless. Instead of manually reading TRaSH Guides and creating custom formats by hand, ProfSync asks about your hardware, preferences, and storage — then does everything automatically.
 
 ## Scope
 
-- English-language content only (movies and TV shows)
-- No anime, no foreign language content
-- Scene and P2P release groups
+- Sonarr v4+ and Radarr v6+ (detects Sonarr v3 and adapts)
+- English-language content (movies and TV shows)
+- TRaSH Guides tier data as the quality source
 
 ## Architecture
 
-Docker Compose stack with 4 Python services + Postgres + Redis:
+Single Python CLI — no database, no background services, no Docker (except for the test stack).
 
 ```
-api.predb.net → collector → Redis queue → parser → Postgres
-                                                      ↓
-                                              Redis queue → nfo-fetcher → Postgres
-                                                                            ↓
-                                                                      analyzer (periodic) → group_profiles
+wizard.py                    # Entry point
+├── src/
+│   ├── main.py              # Orchestration — connects to apps, applies profiles
+│   ├── questions.py         # Interactive prompts (questionary)
+│   ├── arr_client.py        # Sonarr/Radarr v3 API client
+│   ├── profile_builder.py   # Custom format + quality profile generation
+│   └── trash_fetcher.py     # Fetches TRaSH Guides tier data from GitHub
 ```
 
-### Services
+### Data Flow
 
-| Service | Purpose | Key Files |
-|---------|---------|-----------|
-| **collector** | Polls api.predb.net REST API every 30s for new releases + backfills historical data by section | `services/collector/src/websocket_client.py` (poller), `backfill.py` |
-| **parser** | Consumes raw releases from Redis, parses with guessit, filters to English movies/TV, writes to Postgres | `services/parser/src/processor.py`, `filters.py` |
-| **nfo-fetcher** | Fetches NFO files from xREL API, parses quality metrics (CRF, bitrate, audio, HDR profile) via regex | `services/nfo-fetcher/src/fetcher.py`, `nfo_parser.py` |
-| **analyzer** | Periodic (hourly) aggregation — computes per-group quality profiles using TRaSH-blended scoring and auto-assigns tiers | `services/analyzer/src/profiler.py` |
-| **migrate** | One-shot: creates all DB tables from SQLAlchemy models, exits | `services/migrate/migrate.py` |
+```
+TRaSH Guides (GitHub JSON) → trash_fetcher.py → profile_builder.py → arr_client.py → Sonarr/Radarr API
+                                                       ↑
+                                              questions.py (UserProfile)
+```
 
-### Shared Package
+### Key Modules
 
-`shared/profsync/` is installed into every service container:
-- `config.py` — Pydantic settings from env vars
-- `models.py` — SQLAlchemy models (releases, parsed_releases, nukes, release_quality, group_profiles, trash_group_tiers)
-- `db.py` — Session factory
-- `queue.py` — Redis queue helpers (QUEUE_RAW_RELEASES, QUEUE_NFO_NEEDED)
-- `logging.py` — Structured logging setup
+| Module | Purpose |
+|--------|---------|
+| `questions.py` | 12 interactive prompts → `UserProfile` dataclass |
+| `trash_fetcher.py` | Fetches tier JSON from TRaSH GitHub, caches to `~/.cache/profsync/` (24h TTL), returns `dict[str, list[str]]` of tier→groups |
+| `profile_builder.py` | Builds custom format JSON (one per tier + codec/audio/HDR conditionals) and quality profile JSON |
+| `arr_client.py` | REST client for Sonarr/Radarr v3 API: verify, backup, upsert CFs, create/update profiles, bulk-update library |
+| `main.py` | Orchestrates: run wizard → fetch tiers → build CFs → apply to each app → optional bulk update |
 
-### Database Tables
+## Scoring Model
 
-- **releases** — Raw release data from PreDB (name, team, category, pre timestamp)
-- **nukes** — Nuke/unnuke status per release
-- **parsed_releases** — Parsed metadata from release names (title, resolution, codec, group, audio, source, video_profile)
-- **release_quality** — Quality metrics extracted from NFO files (CRF, bitrate, audio format, encode ratio, video_profile_detail)
-- **group_profiles** — Aggregated per-group stats by resolution and media type, with computed quality tiers. Includes codec_distribution, video_profile_distribution, denormalized trash_tier_name/trash_score
-- **trash_group_tiers** — TRaSH Guides tier assignments (read-only benchmark data imported from TRaSH JSON)
+TRaSH-blended scoring with three strictness levels:
 
-## Data Source
+| Tier | Strict | Balanced | Permissive |
+|------|--------|----------|------------|
+| Tier 01 (best groups) | +1500 | +1500 | +1500 |
+| Tier 02 | -2000 | +400 | +200 |
+| Tier 03 | -4000 | -100 | +50 |
+| LQ (low quality) | -10000 | -10000 | -10000 |
 
-Originally built for predb.ovh (WebSocket + REST API). Switched to **api.predb.net** REST API after predb.ovh went down.
-
-Key differences from the original design:
-- Collector now polls every 30s instead of using WebSocket
-- API field names differ: `release` (not `name`), `group` (not `team`), `section` (not `cat`), `pretime` (unix timestamp, not ISO)
-- Backfill iterates per-section (e.g., X264, TV-WEB-HD-X265, BLURAY, UHD) with 100 pages each
-- Rate limit: 60 requests per 60 seconds
-- Nuke status indicated by `status` field (0=ok, 1=nuked) rather than a nested nuke object
+Codec/audio/HDR custom formats add conditional bonuses (e.g., +200 lossless audio, +100 HEVC, +150 Dolby Vision).
 
 ## Running
 
 ```bash
-cp .env.example .env   # configure XREL_API_KEY etc.
-docker compose up -d
-docker compose logs -f
+pip install -e .
+python wizard.py                # Interactive
+python wizard.py --teststack    # Test mode — uses test/.env credentials
 ```
 
-All services use `dns: [127.0.0.11, 1.1.1.1, 1.0.0.1]` for reliable resolution in WSL2/Docker environments.
+## Building
 
-## Key Design Decisions
+```bash
+pip install pyinstaller
+./build.sh              # Linux/macOS → ./dist/profsync-wizard
+```
 
-- **Database is the product** — we don't output TRaSH-compatible JSON. The rich data model (per-release quality metrics, per-group profiles by resolution) would lose too much fidelity compressed into TRaSH's regex-match-and-static-score format.
-- **Services are decoupled via Redis queues** — each service manages its own rate limits and can restart independently.
-- **NFO parsing is best-effort** — `parse_confidence` (0.0-1.0) tracks how many fields were extracted. Groups with low NFO coverage get lower tier confidence.
-- **TRaSH-blended scoring** — `score = quality_score (0-60) + reliability_score (0-40)`. Quality score uses TRaSH score as primary authority when available (capped at 60), falls back to CRF (capped at 30) or bitrate (capped at 20) for unverified groups. Reliability score combines nuke rate (dominant), lossless audio fraction, volume, proper/repack rate, and NFO coverage. TRaSH LQ tag forces F tier. Tiers: A+, A, B+, B, C+, C, D, F.
-- **Schema migrations require manual ALTER TABLE** — `create_all()` only creates new tables, it won't add columns to existing ones. New nullable columns must be added via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+## Test Stack
+
+Docker-based Sonarr + Radarr for development validation:
+
+```bash
+cd test/
+./init-stack.sh                  # Spins up Sonarr + Radarr with 20 series + 20 movies
+cd ..
+python wizard.py --teststack     # Run wizard against test stack
+cd test/
+./validate-wizard.sh             # Verify profiles were created correctly
+```
+
+## Dependencies
+
+- Python 3.10+
+- `questionary >= 2.0`, `requests >= 2.31`
 
 ## Git
 

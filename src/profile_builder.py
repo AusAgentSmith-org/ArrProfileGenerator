@@ -240,6 +240,7 @@ def build_quality_profile(
     all_cfs: list[dict],
     profile_name: str,
     resolution: str,
+    all_existing_cfs: list[dict] | None = None,
 ) -> dict:
     """Build a quality profile payload for Sonarr/Radarr.
 
@@ -321,15 +322,29 @@ def build_quality_profile(
         cutoff_id = 0
 
     # Build format items (CF assignments with scores)
+    # Sonarr/Radarr require ALL custom formats to be present in formatItems
     format_items = []
+    profsync_cf_ids: set[int] = set()
     for cf in all_cfs:
         cf_name = cf["name"]
         if cf_name in cf_id_map:
+            cf_id = cf_id_map[cf_name]
+            profsync_cf_ids.add(cf_id)
             format_items.append({
-                "format": cf_id_map[cf_name],
+                "format": cf_id,
                 "name": cf_name,
                 "score": cf["_profsync_score"],
             })
+
+    # Include all non-ProfSync custom formats with score 0
+    if all_existing_cfs:
+        for existing_cf in all_existing_cfs:
+            if existing_cf["id"] not in profsync_cf_ids:
+                format_items.append({
+                    "format": existing_cf["id"],
+                    "name": existing_cf["name"],
+                    "score": 0,
+                })
 
     # Min format score
     if profile.strictness == "strict":
