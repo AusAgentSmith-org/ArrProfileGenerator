@@ -33,6 +33,15 @@ class UserProfile:
     strictness: str = "balanced"  # "strict", "balanced", "permissive"
     auto_upgrade: bool = True
 
+    # Advanced mode
+    advanced_mode: bool = False
+    custom_qualities: list[str] | None = None       # None = automatic
+    fallback_behavior: str = "default"              # "default", "strict_cutoff", "no_fallback"
+    avoid_hardcoded_subs: bool = False
+    avoid_rushed_subs: bool = False
+    avoid_fan_subs: str = "none"                    # "none", "penalize", "block"
+    codec_preferences: dict[str, str] | None = None  # None = use device_capability logic
+
     # Derived
     wants_hevc: bool = field(init=False, default=True)
     wants_hdr: bool = field(init=False, default=False)
@@ -43,6 +52,17 @@ class UserProfile:
     def _derive_flags(self):
         self.wants_hevc = self.device_capability in ("modern", "mixed")
         self.wants_hdr = self.hdr_support in ("full", "hdr10")
+
+
+QUALITY_CHOICES = {
+    "hd": [
+        "WEBDL-720p", "WEBRip-720p", "Bluray-720p",
+        "WEBDL-1080p", "WEBRip-1080p", "Bluray-1080p", "Remux-1080p",
+    ],
+    "uhd": [
+        "WEBDL-2160p", "WEBRip-2160p", "Bluray-2160p", "Remux-2160p",
+    ],
+}
 
 
 def load_teststack_credentials() -> tuple[AppConfig | None, AppConfig | None]:
@@ -270,6 +290,90 @@ def run_wizard(teststack: bool = False) -> UserProfile:
             questionary.Choice("No — keep the first good match", value=False),
         ],
     ).ask()
+
+    # 13. Advanced mode
+    if questionary.confirm(
+        "Would you like to configure advanced options?", default=False
+    ).ask():
+        profile.advanced_mode = True
+
+        # 13a. Custom quality selection
+        if questionary.confirm(
+            "Manually select which qualities to enable?", default=False
+        ).ask():
+            if profile.resolution == "both":
+                choices = QUALITY_CHOICES["hd"] + QUALITY_CHOICES["uhd"]
+            else:
+                choices = QUALITY_CHOICES[profile.resolution]
+            selected = questionary.checkbox(
+                "Select qualities to enable:",
+                choices=choices,
+                validate=lambda val: True if val else "Select at least one quality",
+            ).ask()
+            profile.custom_qualities = selected
+
+        # 13b. Fallback behavior
+        profile.fallback_behavior = questionary.select(
+            "If your preferred quality isn't available, what should happen?",
+            choices=[
+                questionary.Choice(
+                    "Default — download best available from enabled qualities",
+                    value="default",
+                ),
+                questionary.Choice(
+                    "Strict — only accept releases with positive custom format scores",
+                    value="strict_cutoff",
+                ),
+                questionary.Choice(
+                    "No fallback — reject releases below minimum quality",
+                    value="no_fallback",
+                ),
+            ],
+        ).ask()
+
+        # 13c. Subtitle avoidance
+        if questionary.confirm(
+            "Configure subtitle avoidance?\n"
+            "  Note: detection relies on release names and may be unreliable",
+            default=False,
+        ).ask():
+            profile.avoid_hardcoded_subs = questionary.confirm(
+                "Avoid hardcoded/burned-in subtitles?\n"
+                "  HC, KORSUB, HardSub — these cannot be removed after download",
+                default=True,
+            ).ask()
+
+            profile.avoid_rushed_subs = questionary.confirm(
+                "Avoid rushed subtitle releases?\n"
+                "  FastSUB — typically low quality translations",
+                default=True,
+            ).ask()
+
+            profile.avoid_fan_subs = questionary.select(
+                "How to handle fan subtitles?",
+                choices=[
+                    questionary.Choice("Allow", value="none"),
+                    questionary.Choice("Penalize (-200 score)", value="penalize"),
+                    questionary.Choice("Block (-10000 score)", value="block"),
+                ],
+            ).ask()
+
+        # 13d. Granular codec preferences
+        if questionary.confirm(
+            "Configure granular codec preferences?", default=False
+        ).ask():
+            codec_prefs = {}
+            for codec in ("x264", "x265", "AV1"):
+                codec_prefs[codec] = questionary.select(
+                    f"{codec} preference?",
+                    choices=[
+                        questionary.Choice("Prefer (+200 score)", value="prefer"),
+                        questionary.Choice("Allow (no score change)", value="allow"),
+                        questionary.Choice("Block (-10000 score)", value="block"),
+                    ],
+                    default="allow",
+                ).ask()
+            profile.codec_preferences = codec_prefs
 
     # Re-derive flags after all answers
     profile._derive_flags()

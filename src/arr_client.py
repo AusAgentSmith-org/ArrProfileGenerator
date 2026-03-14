@@ -47,6 +47,13 @@ class ArrClient:
             )
         return resp.json()
 
+    def _delete(self, path: str) -> None:
+        resp = self.session.delete(self._url(path), timeout=30)
+        if resp.status_code not in (200, 204):
+            raise ArrClientError(
+                f"{self.app_name} DELETE {path} failed: {resp.status_code} {resp.text[:300]}"
+            )
+
     # --- Public API ---
 
     def verify_connection(self) -> dict:
@@ -129,6 +136,14 @@ class ArrClient:
             existing_by_name[cf["name"]] = result
 
         return result_map
+
+    def delete_custom_format(self, cf_id: int) -> None:
+        """DELETE /api/v3/customformat/{id}"""
+        self._delete(f"/customformat/{cf_id}")
+
+    def delete_quality_profile(self, profile_id: int) -> None:
+        """DELETE /api/v3/qualityprofile/{id}"""
+        self._delete(f"/qualityprofile/{profile_id}")
 
     def get_quality_profiles(self) -> list:
         """GET /api/v3/qualityprofile"""

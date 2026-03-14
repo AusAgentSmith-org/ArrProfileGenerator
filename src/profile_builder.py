@@ -71,12 +71,93 @@ def build_group_custom_formats(
     return cfs
 
 
+CODEC_REGEX = {
+    "x264": r"\b(x264|h\.?264|AVC)\b",
+    "x265": r"\b(x265|HEVC|h\.?265)\b",
+    "AV1":  r"\b(AV1)\b",
+}
+CODEC_SCORES = {"prefer": 200, "allow": None, "block": -10000}
+
+
+def build_subtitle_cfs(profile: UserProfile) -> list[dict]:
+    """Build CFs for subtitle avoidance based on advanced mode settings."""
+    cfs = []
+
+    if profile.avoid_hardcoded_subs:
+        cfs.append({
+            "name": "ProfSync Hardcoded Subs",
+            "includeCustomFormatWhenRenaming": False,
+            "specifications": [
+                _release_title_spec(
+                    "Hardcoded Subs",
+                    r"\b(HC|KORSUB|HardSub|Hard[\.\- ]?Sub(bed)?)\b",
+                )
+            ],
+            "_profsync_score": -10000,
+        })
+
+    if profile.avoid_rushed_subs:
+        cfs.append({
+            "name": "ProfSync Rushed Subs",
+            "includeCustomFormatWhenRenaming": False,
+            "specifications": [
+                _release_title_spec(
+                    "Rushed Subs",
+                    r"\b(FastSUB|Fast[\.\- ]?Sub(bed)?)\b",
+                )
+            ],
+            "_profsync_score": -10000,
+        })
+
+    if profile.avoid_fan_subs == "penalize":
+        cfs.append({
+            "name": "ProfSync Fan Subs",
+            "includeCustomFormatWhenRenaming": False,
+            "specifications": [
+                _release_title_spec("Fan Subs", r"\b(FanSub|Fan[\.\- ]?Sub(bed)?)\b")
+            ],
+            "_profsync_score": -200,
+        })
+    elif profile.avoid_fan_subs == "block":
+        cfs.append({
+            "name": "ProfSync Fan Subs",
+            "includeCustomFormatWhenRenaming": False,
+            "specifications": [
+                _release_title_spec("Fan Subs", r"\b(FanSub|Fan[\.\- ]?Sub(bed)?)\b")
+            ],
+            "_profsync_score": -10000,
+        })
+
+    return cfs
+
+
+def _build_granular_codec_cfs(codec_preferences: dict[str, str]) -> list[dict]:
+    """Build CFs from explicit codec preferences (prefer/allow/block)."""
+    cfs = []
+    for codec, pref in codec_preferences.items():
+        score = CODEC_SCORES.get(pref)
+        if score is None:
+            continue  # "allow" = no CF needed
+        label = "Preferred" if pref == "prefer" else "Blocked"
+        cfs.append({
+            "name": f"ProfSync {codec} {label}",
+            "includeCustomFormatWhenRenaming": False,
+            "specifications": [
+                _release_title_spec(codec, CODEC_REGEX[codec])
+            ],
+            "_profsync_score": score,
+        })
+    return cfs
+
+
 def build_codec_audio_cfs(profile: UserProfile) -> list[dict]:
     """Build conditional CFs for codec, audio, and HDR preferences."""
     cfs = []
 
-    # Codec preferences
-    if profile.device_capability == "legacy":
+    # Codec preferences — granular overrides device_capability logic
+    if profile.codec_preferences is not None:
+        cfs.extend(_build_granular_codec_cfs(profile.codec_preferences))
+    elif profile.device_capability == "legacy":
         # Prefer x264, penalize x265
         cfs.append({
             "name": "ProfSync x264 Preferred",
@@ -149,6 +230,7 @@ def build_all_custom_formats(
     """Build the complete list of custom formats."""
     cfs = build_group_custom_formats(group_tiers, profile)
     cfs.extend(build_codec_audio_cfs(profile))
+    cfs.extend(build_subtitle_cfs(profile))
     return cfs
 
 
@@ -259,15 +341,35 @@ def build_quality_profile(
     # Get all available qualities from schema
     all_qualities = _get_all_quality_names(schema_items)
 
-    # Determine which qualities to enable using the new logic
-    enabled_names: list[str] = []
-    for _, quality_name in all_qualities:
-        if _should_include_quality(quality_name, resolution, profile.include_remux and profile.storage_constraint != "tight"):
-            enabled_names.append(quality_name)
+    # Determine which qualities to enable
+    if profile.custom_qualities is not None:
+        # Advanced mode: use explicit selection
+        # Sonarr uses "Bluray-1080p Remux" / "Bluray-2160p Remux" while
+        # Radarr uses "Remux-1080p" / "Remux-2160p". Map both directions
+        # so user-facing names resolve regardless of which app we target.
+        all_quality_names = {name for _, name in all_qualities}
+        _remux_aliases = {
+            "Remux-1080p": "Bluray-1080p Remux",
+            "Remux-2160p": "Bluray-2160p Remux",
+            "Bluray-1080p Remux": "Remux-1080p",
+            "Bluray-2160p Remux": "Remux-2160p",
+        }
+        enabled_names = []
+        for q in profile.custom_qualities:
+            if q in all_quality_names:
+                enabled_names.append(q)
+            elif _remux_aliases.get(q, "") in all_quality_names:
+                enabled_names.append(_remux_aliases[q])
+    else:
+        # Standard mode: automatic selection
+        enabled_names = []
+        for _, quality_name in all_qualities:
+            if _should_include_quality(quality_name, resolution, profile.include_remux and profile.storage_constraint != "tight"):
+                enabled_names.append(quality_name)
 
-    # If tight storage, remove Bluray and Remux, keep only WEB
-    if profile.storage_constraint == "tight":
-        enabled_names = [n for n in enabled_names if "Bluray" not in n and "Remux" not in n]
+        # If tight storage, remove Bluray and Remux, keep only WEB
+        if profile.storage_constraint == "tight":
+            enabled_names = [n for n in enabled_names if "Bluray" not in n and "Remux" not in n]
 
     # Build items list — mark matching ones as allowed
     items = []
@@ -354,21 +456,30 @@ def build_quality_profile(
                     "score": 0,
                 })
 
-    # Min format score
-    if profile.strictness == "strict":
-        min_score = 399
-    else:
-        min_score = -9999
-
-    # Cutoff format score
-    if profile.strictness == "strict":
-        cutoff_format_score = 999
-    else:
+    # Fallback behavior (advanced) takes priority over strictness defaults
+    if profile.fallback_behavior == "strict_cutoff":
+        min_score = 0
         cutoff_format_score = 1499
+        upgrade_allowed = profile.auto_upgrade
+    elif profile.fallback_behavior == "no_fallback":
+        min_score = 399
+        cutoff_format_score = 1499
+        upgrade_allowed = False
+    else:
+        # Default — use strictness-based logic
+        if profile.strictness == "strict":
+            min_score = 399
+        else:
+            min_score = -9999
+        if profile.strictness == "strict":
+            cutoff_format_score = 999
+        else:
+            cutoff_format_score = 1499
+        upgrade_allowed = profile.auto_upgrade
 
     return {
         "name": profile_name,
-        "upgradeAllowed": profile.auto_upgrade,
+        "upgradeAllowed": upgrade_allowed,
         "cutoff": cutoff_id,
         "items": items,
         "minFormatScore": min_score,

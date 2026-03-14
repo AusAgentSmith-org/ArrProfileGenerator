@@ -27,6 +27,7 @@ def apply_to_app(
     all_cfs: list[dict],
     profile: UserProfile,
     group_tiers: dict[str, list[str]],
+    skip_backup: bool = False,
 ) -> int | None:
     """Apply custom formats and quality profiles to a single Sonarr/Radarr instance.
 
@@ -53,13 +54,14 @@ def apply_to_app(
         skip_cfs = True
 
     # 3. Trigger backup
-    try:
-        print(f"  Triggering backup...")
-        client.trigger_backup()
-        print(f"  Backup taken")
-    except ArrClientError as e:
-        print(f"  WARNING: Backup failed: {e}")
-        print("  Continuing anyway...")
+    if not skip_backup:
+        try:
+            print(f"  Triggering backup...")
+            client.trigger_backup()
+            print(f"  Backup taken")
+        except ArrClientError as e:
+            print(f"  WARNING: Backup failed: {e}")
+            print("  Continuing anyway...")
 
     # 4. Upsert custom formats
     cf_id_map: dict[str, int] = {}
