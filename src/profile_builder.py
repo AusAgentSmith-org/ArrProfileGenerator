@@ -154,7 +154,15 @@ def build_all_custom_formats(
 
 # Quality exclusions — always disable these low-quality sources
 QUALITY_EXCLUSIONS = {
-    "RAW-HD", "Unknown", "TELECINE", "TELESYNC", "CAM", "WORKPRINT",
+    "RAW-HD", "Raw-HD", "Unknown", "TELECINE", "TELESYNC", "CAM", "WORKPRINT",
+    "REGIONAL", "DVDSCR", "BR-DISK",
+}
+
+# Qualities to include per resolution (prefix matching)
+# Only these patterns will be enabled; everything else is excluded.
+QUALITY_INCLUDES = {
+    "uhd": {"2160p", "Remux-2160p"},
+    "hd": {"1080p", "720p", "Remux-1080p"},
 }
 
 # Quality cutoff points — the highest quality we want to accept
@@ -178,10 +186,20 @@ def _find_quality_item(schema_items: list[dict], name: str) -> dict | None:
 
 
 def _get_quality_id(schema_items: list[dict], name: str) -> int | None:
-    """Get the quality id for a named quality from the schema."""
-    item = _find_quality_item(schema_items, name)
-    if item:
-        return item.get("quality", {}).get("id")
+    """Get the quality id for a named quality from the schema.
+
+    If the quality is inside a group, returns the group's id instead,
+    since Sonarr/Radarr require the cutoff to reference group IDs for
+    grouped qualities.
+    """
+    for item in schema_items:
+        if item.get("quality", {}).get("name") == name:
+            return item.get("quality", {}).get("id")
+        # Check inside quality groups — return the GROUP id
+        if item.get("items"):
+            for sub in item["items"]:
+                if sub.get("quality", {}).get("name") == name:
+                    return item.get("id")
     return None
 
 
@@ -207,30 +225,20 @@ def _should_include_quality(quality_name: str, resolution: str, include_remux: b
     if quality_name in QUALITY_EXCLUSIONS:
         return False
 
-    # Get the cutoff for this resolution
-    if resolution == "both":
-        # For "both", we want everything (nothing excluded by resolution)
-        pass
-    elif resolution == "uhd":
-        # For UHD, exclude 1080p and lower (unless it's a group we want)
-        # This is a bit tricky since quality hierarchy isn't linear
-        # For now, exclude HD remux and obvious 1080p qualities
-        if "1080p" in quality_name and "Remux" in quality_name:
-            return False
-        if quality_name == "Remux-1080p":
-            return False
-    elif resolution == "hd":
-        # For HD only, exclude 2160p/4K qualities
-        if "2160p" in quality_name:
-            return False
-        if "4K" in quality_name or "UHD" in quality_name:
-            return False
-
     # Exclude remux if not wanted
     if not include_remux and "Remux" in quality_name:
         return False
 
-    return True
+    # For "both", include all non-excluded qualities at 1080p and above
+    if resolution == "both":
+        return any(tag in quality_name for tag in ("1080p", "2160p", "Remux"))
+
+    # For specific resolutions, only include matching qualities
+    if resolution in ("uhd", "hd"):
+        includes = QUALITY_INCLUDES[resolution]
+        return any(tag in quality_name for tag in includes)
+
+    return False
 
 
 def build_quality_profile(
