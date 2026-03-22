@@ -35,34 +35,26 @@ jobs:
           name: profsync-wizard-linux
           path: dist/profsync-wizard-linux
 
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          pip install pyinstaller
-          pip install -r requirements.txt
-
-      - name: Build binary
-        run: pyinstaller build.spec --clean -y
-
-      - name: Rename binary
-        run: mv dist/profsync-wizard.exe dist/profsync-wizard-windows.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: profsync-wizard-windows
-          path: dist/profsync-wizard-windows.exe
+  # Windows build disabled to avoid GitHub-hosted runner minutes
+  # build-windows:
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.12'
+  #     - run: |
+  #         pip install pyinstaller
+  #         pip install -r requirements.txt
+  #     - run: pyinstaller build.spec --clean -y
+  #     - run: mv dist/profsync-wizard.exe dist/profsync-wizard-windows.exe
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: profsync-wizard-windows
+  #         path: dist/profsync-wizard-windows.exe
 
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux]
     runs-on: [self-hosted, node-b]
 
     steps:
